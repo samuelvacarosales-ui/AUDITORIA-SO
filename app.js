@@ -185,7 +185,7 @@ document.getElementById('fileInputNew').addEventListener('change', async (e)=>{
 
   const missingLibs = checkLibsLoaded();
   if(missingLibs.length){
-    alert('No se puede leer el Excel porque faltan por cargar: '+missingLibs.join(', ')+'.\nRevisa que la carpeta "vendor" esté subida completa en GitHub.');
+    alert('No se puede leer el Excel porque faltan por cargar: '+missingLibs.join(', ')+'.\nRevisa que esos archivos estén subidos en la raíz del repositorio de GitHub.');
     return;
   }
 
@@ -757,9 +757,9 @@ async function buildPdfBlob(){
    ============================================================ */
 function checkLibsLoaded(){
   const missing = [];
-  if(typeof XLSX === 'undefined') missing.push('vendor/xlsx.full.min.js');
-  if(typeof JSZip === 'undefined') missing.push('vendor/jszip.min.js');
-  if(typeof window.jspdf === 'undefined') missing.push('vendor/jspdf.umd.min.js');
+  if(typeof XLSX === 'undefined') missing.push('xlsx.full.min.js');
+  if(typeof JSZip === 'undefined') missing.push('jszip.min.js');
+  if(typeof window.jspdf === 'undefined') missing.push('jspdf.umd.min.js');
   return missing;
 }
 
@@ -769,8 +769,8 @@ function checkLibsLoaded(){
     alert(
       'La app no ha podido cargar estos archivos:\n\n' +
       missingLibs.join('\n') +
-      '\n\nEsto casi siempre significa que la carpeta "vendor" no se subió completa (o con otro nombre/mayúsculas) a GitHub. ' +
-      'Revisa en tu repositorio que exista la carpeta vendor con esos 3 archivos dentro, en la raíz, junto a index.html.'
+      '\n\nEsto casi siempre significa que esos archivos .js no se subieron a GitHub, o se subieron con otro nombre. ' +
+      'Revisa en tu repositorio que estén sueltos en la raíz, junto a index.html.'
     );
     return; // no seguimos inicializando si faltan librerías
   }

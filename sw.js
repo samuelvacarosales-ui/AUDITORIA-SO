@@ -1,13 +1,13 @@
-const CACHE = 'auditor-so-v1';
+const CACHE = 'auditor-so-v2';
 const ASSETS = [
   './',
   './index.html',
   './app.js',
   './questions.js',
   './manifest.json',
-  './vendor/xlsx.full.min.js',
-  './vendor/jspdf.umd.min.js',
-  './vendor/jszip.min.js',
+  './xlsx.full.min.js',
+  './jspdf.umd.min.js',
+  './jszip.min.js',
   './icon-192.png',
   './icon-512.png',
 ];
