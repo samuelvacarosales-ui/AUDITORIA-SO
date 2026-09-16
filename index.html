@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Auditor SO</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Auditor SO">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#e8541e">
+<style>
+:root{
+  --repsol-orange:#f2711c;
+  --repsol-red:#e6402a;
+  --repsol-dark:#1e2430;
+  --bg:#f4f5f7;
+  --card:#ffffff;
+  --ok:#2e9e5b;
+  --bad:#d1403a;
+  --na:#8b93a1;
+  --pte:#d9a72c;
+  --border:#e2e5ea;
+  --text:#1e2430;
+  --text-soft:#6b7280;
+  --radius:14px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-top: env(safe-area-inset-top, 0px);
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;
+  overscroll-behavior-y:none;
+  padding-top:var(--safe-top);
+}
+#app{display:flex; flex-direction:column; height:100vh; height:100dvh;}
+
+/* ---------- Top bar ---------- */
+.topbar{
+  background:linear-gradient(135deg,var(--repsol-orange),var(--repsol-red));
+  color:#fff; padding:14px 16px; display:flex; align-items:center; gap:10px;
+  flex-shrink:0; position:relative; z-index:10;
+}
+.topbar h1{font-size:17px; margin:0; font-weight:700; flex:1; line-height:1.2;}
+.topbar .sub{font-size:12px; opacity:.9; font-weight:400;}
+.icon-btn{
+  background:rgba(255,255,255,.18); border:none; color:#fff; width:36px; height:36px;
+  border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px;
+}
+.icon-btn:active{background:rgba(255,255,255,.32);}
+
+/* ---------- Screens ---------- */
+.screen{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(90px + var(--safe-bottom));}
+.screen.hidden{display:none;}
+.pad{padding:16px;}
+
+/* ---------- Home screen ---------- */
+.home-actions{display:flex; flex-direction:column; gap:12px; padding:16px;}
+.big-btn{
+  background:var(--card); border:1.5px dashed var(--repsol-orange); border-radius:var(--radius);
+  padding:22px 16px; text-align:center; color:var(--repsol-red); font-weight:700; font-size:16px;
+}
+.big-btn small{display:block; font-weight:400; color:var(--text-soft); font-size:13px; margin-top:4px;}
+.section-title{font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-soft); font-weight:700; margin:18px 4px 8px;}
+.audit-card{
+  background:var(--card); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px;
+  display:flex; align-items:center; gap:12px; border:1px solid var(--border);
+}
+.audit-card .info{flex:1; min-width:0;}
+.audit-card .ceco{font-weight:700; font-size:15px;}
+.audit-card .meta{font-size:12.5px; color:var(--text-soft); margin-top:2px;}
+.audit-card .progress-ring{
+  width:44px;height:44px; border-radius:50%; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;
+  background:conic-gradient(var(--repsol-orange) calc(var(--pct,0)*1%), #eee 0);
+}
+.audit-card .progress-ring span{background:#fff; width:34px;height:34px;border-radius:50%; display:flex; align-items:center; justify-content:center;}
+.audit-card .del-btn{color:var(--bad); font-size:20px; padding:4px 8px;}
+.empty-state{text-align:center; color:var(--text-soft); padding:30px 16px; font-size:14px;}
+
+/* ---------- Header fields (auditoría) ---------- */
+.header-card{background:var(--card); border-radius:var(--radius); padding:14px 16px; margin:12px; border:1px solid var(--border);}
+.header-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;}
+.field{display:flex; flex-direction:column; gap:3px;}
+.field.full{grid-column:1/-1;}
+.field label{font-size:11px; color:var(--text-soft); font-weight:600; text-transform:uppercase; letter-spacing:.03em;}
+.field input, .field select{
+  border:1px solid var(--border); border-radius:9px; padding:9px 10px; font-size:14.5px; background:#fbfbfc; color:var(--text);
+}
+.field .readonly{padding:9px 0; font-size:14.5px; font-weight:600;}
+
+/* ---------- Progress bar sticky ---------- */
+.progress-wrap{position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 16px 6px;}
+.progress-bar-bg{height:8px; background:#e6e8ec; border-radius:6px; overflow:hidden;}
+.progress-bar-fill{height:100%; background:linear-gradient(90deg,var(--repsol-orange),var(--repsol-red)); border-radius:6px; transition:width .25s;}
+.progress-label{font-size:12px; color:var(--text-soft); margin-top:4px; display:flex; justify-content:space-between;}
+
+/* ---------- Area accordion ---------- */
+.area-block{margin:0 12px 12px;}
+.area-header{
+  background:var(--repsol-dark); color:#fff; padding:11px 14px; border-radius:12px;
+  display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:14px;
+}
+.area-header .cnt{font-size:12px; font-weight:400; opacity:.8;}
+.apartado-title{font-size:12px; font-weight:700; color:var(--text-soft); text-transform:uppercase; letter-spacing:.03em; margin:12px 4px 6px;}
+
+.q-card{
+  background:var(--card); border-radius:var(--radius); padding:13px 14px; margin-bottom:9px; border:1px solid var(--border);
+}
+.q-card.answered{border-color:#d7dae0;}
+.q-top{display:flex; gap:8px; align-items:flex-start; margin-bottom:10px;}
+.q-num{
+  width:26px;height:26px; border-radius:8px; background:#eef0f3; color:var(--text-soft); font-size:12px; font-weight:700;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.q-num.a-SI{background:#e2f5e9; color:var(--ok);}
+.q-num.a-NO{background:#fbe4e2; color:var(--bad);}
+.q-num.a-NA{background:#ececee; color:var(--na);}
+.q-num.a-PTE{background:#faf0d6; color:var(--pte);}
+.q-text{font-size:14px; font-weight:600; line-height:1.35; flex:1;}
+
+.val-row{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:9px;}
+.val-btn{
+  border:1.5px solid var(--border); background:#fbfbfc; border-radius:9px; padding:9px 2px; font-size:12.5px; font-weight:700;
+  color:var(--text-soft); text-align:center;
+}
+.val-btn.sel-SI{background:var(--ok); border-color:var(--ok); color:#fff;}
+.val-btn.sel-NO{background:var(--bad); border-color:var(--bad); color:#fff;}
+.val-btn.sel-NA{background:var(--na); border-color:var(--na); color:#fff;}
+.val-btn.sel-PTE{background:var(--pte); border-color:var(--pte); color:#fff;}
+
+.mini-row{display:flex; gap:8px; margin-bottom:8px;}
+.mini-field{flex:1; display:flex; flex-direction:column; gap:3px;}
+.mini-field label{font-size:10.5px; color:var(--text-soft); font-weight:600;}
+.mini-field input{border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13.5px; background:#fbfbfc;}
+
+.photos-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+.photo-thumb{position:relative; width:60px; height:60px; border-radius:9px; overflow:hidden; border:1px solid var(--border); flex-shrink:0;}
+.photo-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+.photo-thumb .rm{
+  position:absolute; top:2px; right:2px; background:rgba(0,0,0,.55); color:#fff; width:18px;height:18px;
+  border-radius:50%; font-size:11px; display:flex; align-items:center; justify-content:center; line-height:1;
+}
+.add-photo-btn{
+  width:60px; height:60px; border-radius:9px; border:1.5px dashed var(--repsol-orange); color:var(--repsol-orange);
+  display:flex; align-items:center; justify-content:center; font-size:22px; background:#fff8f3; flex-shrink:0;
+}
+
+/* ---------- Bottom bar ---------- */
+.bottombar{
+  position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--border);
+  padding:10px 14px calc(10px + var(--safe-bottom)); display:flex; gap:10px; z-index:20;
+}
+.btn{
+  flex:1; border:none; border-radius:12px; padding:13px; font-size:15px; font-weight:700; text-align:center;
+}
+.btn-primary{background:linear-gradient(135deg,var(--repsol-orange),var(--repsol-red)); color:#fff;}
+.btn-secondary{background:#eef0f3; color:var(--text);}
+.btn:disabled{opacity:.5;}
+
+/* ---------- Modal (camera/crop) ---------- */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(10,10,14,.92); z-index:100; display:flex; flex-direction:column;
+}
+.modal-overlay.hidden{display:none;}
+.modal-header{display:flex; justify-content:space-between; align-items:center; padding:14px 16px; padding-top:calc(14px + var(--safe-top)); color:#fff;}
+.modal-header button{background:none; border:none; color:#fff; font-size:15px; font-weight:600; padding:6px 4px;}
+.crop-stage{flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; touch-action:none;}
+.crop-stage canvas{max-width:100%; max-height:100%;}
+.crop-hint{color:#c9ccd3; font-size:12.5px; text-align:center; padding:8px 16px 4px;}
+.modal-footer{display:flex; gap:12px; padding:16px; padding-bottom:calc(16px + var(--safe-bottom));}
+.modal-footer .btn{padding:14px;}
+
+/* ---------- Toast ---------- */
+#toast{
+  position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#1e2430; color:#fff;
+  padding:10px 18px; border-radius:10px; font-size:13.5px; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s;
+  max-width:88%; text-align:center;
+}
+#toast.show{opacity:1;}
+
+/* ---------- Export progress ---------- */
+.export-overlay{
+  position:fixed; inset:0; background:rgba(10,10,14,.75); z-index:150; display:flex; align-items:center; justify-content:center;
+}
+.export-overlay.hidden{display:none;}
+.export-box{background:#fff; border-radius:16px; padding:26px 28px; text-align:center; width:80%; max-width:300px;}
+.spinner{width:34px;height:34px; border:3px solid #eee; border-top-color:var(--repsol-orange); border-radius:50%; margin:0 auto 14px; animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+input[type=file]{display:none;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ TOP BAR ============ -->
+  <div class="topbar" id="topbar">
+    <button class="icon-btn hidden" id="backBtn">‹</button>
+    <div style="flex:1;">
+      <h1 id="topTitle">Auditor SO</h1>
+      <div class="sub" id="topSub">Repsol · Supervisión Operativa</div>
+    </div>
+    <button class="icon-btn hidden" id="settingsBtn">⚙</button>
+  </div>
+
+  <!-- ============ HOME SCREEN ============ -->
+  <div class="screen" id="screen-home">
+    <div class="home-actions">
+      <label class="big-btn" for="fileInputNew">
+        + Nueva auditoría
+        <small>Cargar Excel de la plataforma Repsol</small>
+      </label>
+      <input type="file" id="fileInputNew" accept=".xlsx">
+    </div>
+    <div class="pad" style="padding-top:0;">
+      <div class="section-title">Auditorías en curso</div>
+      <div id="ongoingList"></div>
+      <div class="section-title" id="finishedTitle" style="display:none;">Finalizadas</div>
+      <div id="finishedList"></div>
+    </div>
+  </div>
+
+  <!-- ============ AUDIT SCREEN ============ -->
+  <div class="screen hidden" id="screen-audit">
+    <div class="header-card" id="headerCard"></div>
+    <div class="progress-wrap">
+      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
+      <div class="progress-label"><span id="progressText">0 / 76 respondidas</span><span id="photoCount">0 fotos</span></div>
+    </div>
+    <div id="areasContainer"></div>
+  </div>
+
+  <!-- ============ BOTTOM BAR (audit screen) ============ -->
+  <div class="bottombar hidden" id="bottombar">
+    <button class="btn btn-secondary" id="saveBtn">Guardar</button>
+    <button class="btn btn-primary" id="finishBtn">Finalizar y exportar</button>
+  </div>
+
+  <!-- ============ SETTINGS SCREEN ============ -->
+  <div class="screen hidden" id="screen-settings">
+    <div class="header-card">
+      <div class="header-grid">
+        <div class="field full">
+          <label>Nombre del auditor</label>
+          <input type="text" id="setAuditor" placeholder="SAMUEL VACA">
+        </div>
+        <div class="field full">
+          <label>D.A. (Dirección de Área) por defecto</label>
+          <input type="text" id="setDA" placeholder="NORESTE">
+        </div>
+      </div>
+    </div>
+    <div class="pad">
+      <button class="btn btn-primary" id="saveSettingsBtn" style="width:100%;">Guardar ajustes</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ PHOTO MODAL ============ -->
+<div class="modal-overlay hidden" id="photoModal">
+  <div class="modal-header">
+    <button id="photoCancelBtn">Cancelar</button>
+    <span>Ajustar foto</span>
+    <button id="photoRotateBtn">⟳ Rotar</button>
+  </div>
+  <div class="crop-stage" id="cropStage">
+    <canvas id="cropCanvas"></canvas>
+  </div>
+  <div class="crop-hint">Arrastra para mover · pellizca para hacer zoom</div>
+  <div class="modal-footer">
+    <button class="btn btn-secondary" id="photoRetakeBtn">Repetir</button>
+    <button class="btn btn-primary" id="photoUseBtn">Usar foto</button>
+  </div>
+</div>
+<input type="file" id="cameraInput" accept="image/*" capture="environment">
+<input type="file" id="galleryInput" accept="image/*">
+
+<!-- ============ EXPORT OVERLAY ============ -->
+<div class="export-overlay hidden" id="exportOverlay">
+  <div class="export-box">
+    <div class="spinner"></div>
+    <div id="exportStatus" style="font-size:14px; font-weight:600;">Generando archivos…</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/jspdf.umd.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="questions.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
