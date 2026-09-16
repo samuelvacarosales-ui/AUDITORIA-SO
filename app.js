@@ -182,10 +182,18 @@ document.getElementById('fileInputNew').addEventListener('change', async (e)=>{
   const file = e.target.files[0];
   e.target.value = '';
   if(!file) return;
+
+  const missingLibs = checkLibsLoaded();
+  if(missingLibs.length){
+    alert('No se puede leer el Excel porque faltan por cargar: '+missingLibs.join(', ')+'.\nRevisa que la carpeta "vendor" esté subida completa en GitHub.');
+    return;
+  }
+
   try{
     const buf = await file.arrayBuffer();
     const wb = XLSX.read(buf, {type:'array'});
     const ws = wb.Sheets[wb.SheetNames[0]];
+    if(!ws) throw new Error('El archivo no tiene ninguna hoja legible (SheetNames vacío).');
     const get = (addr)=> (ws[addr]? ws[addr].v : '') ;
 
     const zona = get('B3');
@@ -194,6 +202,10 @@ document.getElementById('fileInputNew').addEventListener('change', async (e)=>{
     const fecha = get('G3');
     const cPN = get('B5');
     const codSup = get('G5');
+
+    if(!ceco && !zona && !fecha){
+      throw new Error('Se ha leído el Excel pero las celdas A2/B3/G3 están vacías. ¿Es este el Excel original descargado de la plataforma (sin filas/columnas movidas)?');
+    }
 
     const settings = getSettings();
     const id = sanitizeId(ceco)+'_'+sanitizeId(fecha)+'_'+Date.now();
@@ -215,7 +227,7 @@ document.getElementById('fileInputNew').addEventListener('change', async (e)=>{
     showScreen('screen-audit');
   }catch(err){
     console.error(err);
-    alert('No se ha podido leer este Excel. Comprueba que es el archivo descargado de la plataforma de Repsol sin modificar su estructura.');
+    alert('No se ha podido leer este Excel.\n\nDetalle técnico: '+ (err && err.message ? err.message : err) +'\n\nComprueba que es el archivo descargado de la plataforma de Repsol sin modificar su estructura.');
   }
 });
 
@@ -743,7 +755,25 @@ async function buildPdfBlob(){
 /* ============================================================
    ARRANQUE
    ============================================================ */
+function checkLibsLoaded(){
+  const missing = [];
+  if(typeof XLSX === 'undefined') missing.push('vendor/xlsx.full.min.js');
+  if(typeof JSZip === 'undefined') missing.push('vendor/jszip.min.js');
+  if(typeof window.jspdf === 'undefined') missing.push('vendor/jspdf.umd.min.js');
+  return missing;
+}
+
 (async function init(){
+  const missingLibs = checkLibsLoaded();
+  if(missingLibs.length){
+    alert(
+      'La app no ha podido cargar estos archivos:\n\n' +
+      missingLibs.join('\n') +
+      '\n\nEsto casi siempre significa que la carpeta "vendor" no se subió completa (o con otro nombre/mayúsculas) a GitHub. ' +
+      'Revisa en tu repositorio que exista la carpeta vendor con esos 3 archivos dentro, en la raíz, junto a index.html.'
+    );
+    return; // no seguimos inicializando si faltan librerías
+  }
   db = await openDB();
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(()=>{});
