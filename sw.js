@@ -1,36 +1,24 @@
-const CACHE = 'auditor-so-v2';
-const ASSETS = [
-  './',
-  './index.html',
-  './app.js',
-  './questions.js',
-  './manifest.json',
-  './xlsx.full.min.js',
-  './jspdf.umd.min.js',
-  './jszip.min.js',
-  './icon-192.png',
-  './icon-512.png',
-];
+/* Service worker: primero red (así las actualizaciones llegan solas),
+   y si no hay cobertura, usa la copia guardada. */
+const CACHE = 'anexo-so-v3';
+const ASSETS = ['./','./index.html','./app.js','./core.js','./manifest.json',
+  './xlsx.full.min.js','./jspdf.umd.min.js','./icon-192.png','./icon-512.png'];
 
 self.addEventListener('install', e=>{
-  e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting()));
-});
-self.addEventListener('activate', e=>{
   e.waitUntil(
-    caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))
-      .then(()=>self.clients.claim())
+    caches.open(CACHE).then(c=>Promise.all(ASSETS.map(u=>c.add(u).catch(()=>null)))).then(()=>self.skipWaiting())
   );
 });
+self.addEventListener('activate', e=>{
+  e.waitUntil(caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+});
 self.addEventListener('fetch', e=>{
-  if(e.request.method !== 'GET') return;
+  const r = e.request;
+  if(r.method!=='GET' || new URL(r.url).origin!==location.origin) return;
   e.respondWith(
-    caches.match(e.request).then(cached=>{
-      if(cached) return cached;
-      return fetch(e.request).then(resp=>{
-        const copy = resp.clone();
-        caches.open(CACHE).then(c=>c.put(e.request, copy));
-        return resp;
-      }).catch(()=> cached);
-    })
+    fetch(r).then(resp=>{
+      if(resp && resp.ok){ const copy=resp.clone(); caches.open(CACHE).then(c=>c.put(r,copy)); }
+      return resp;
+    }).catch(()=>caches.match(r).then(m=>m||caches.match('./index.html')))
   );
 });

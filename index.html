@@ -3,297 +3,204 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Auditor SO</title>
+<title>Anexo SO</title>
 <link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Auditor SO">
+<meta name="apple-mobile-web-app-title" content="Anexo SO">
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="theme-color" content="#e8541e">
 <style>
 :root{
-  --repsol-orange:#f2711c;
-  --repsol-red:#e6402a;
-  --repsol-dark:#1e2430;
-  --bg:#f4f5f7;
-  --card:#ffffff;
-  --ok:#2e9e5b;
-  --bad:#d1403a;
-  --na:#8b93a1;
-  --pte:#d9a72c;
-  --border:#e2e5ea;
-  --text:#1e2430;
-  --text-soft:#6b7280;
-  --radius:14px;
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-top: env(safe-area-inset-top, 0px);
+  --orange:#f2711c; --red:#e6402a; --dark:#1e2430; --bg:#f4f5f7; --card:#fff;
+  --ok:#008c3c; --bad:#dc0000; --na:#000; --pte:#c87800; --none:#787878;
+  --border:#e2e5ea; --text:#1e2430; --soft:#6b7280;
+  --sb: env(safe-area-inset-bottom,0px); --st: env(safe-area-inset-top,0px);
 }
-*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;}
-body{
-  margin:0; background:var(--bg); color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Segoe UI,Roboto,sans-serif;
-  overscroll-behavior-y:none;
-  padding-top:var(--safe-top);
-}
-#app{display:flex; flex-direction:column; height:100vh; height:100dvh;}
+body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Roboto,sans-serif;overscroll-behavior-y:none;}
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+.hidden{display:none !important;}
 
-/* ---------- Top bar ---------- */
-.topbar{
-  background:linear-gradient(135deg,var(--repsol-orange),var(--repsol-red));
-  color:#fff; padding:14px 16px; display:flex; align-items:center; gap:10px;
-  flex-shrink:0; position:relative; z-index:10;
-}
-.topbar h1{font-size:17px; margin:0; font-weight:700; flex:1; line-height:1.2;}
-.topbar .sub{font-size:12px; opacity:.9; font-weight:400;}
-.icon-btn{
-  background:rgba(255,255,255,.18); border:none; color:#fff; width:36px; height:36px;
-  border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px;
-}
-.icon-btn:active{background:rgba(255,255,255,.32);}
+.topbar{background:linear-gradient(135deg,var(--orange),var(--red));color:#fff;padding:calc(12px + var(--st)) 14px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+.topbar .t{flex:1;min-width:0;}
+.topbar h1{font-size:17px;margin:0;font-weight:700;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.topbar .sub{font-size:12px;opacity:.92;}
+.icon-btn{background:rgba(255,255,255,.2);border:none;color:#fff;width:38px;height:38px;border-radius:10px;font-size:20px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.icon-btn:active{background:rgba(255,255,255,.35);}
 
-/* ---------- Screens ---------- */
-.screen{flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding-bottom:calc(90px + var(--safe-bottom));}
-.screen.hidden{display:none;}
-.pad{padding:16px;}
+.screen{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(96px + var(--sb));}
+.pad{padding:14px;}
 
-/* ---------- Home screen ---------- */
-.home-actions{display:flex; flex-direction:column; gap:12px; padding:16px;}
-.big-btn{
-  background:var(--card); border:1.5px dashed var(--repsol-orange); border-radius:var(--radius);
-  padding:22px 16px; text-align:center; color:var(--repsol-red); font-weight:700; font-size:16px;
-}
-.big-btn small{display:block; font-weight:400; color:var(--text-soft); font-size:13px; margin-top:4px;}
-.section-title{font-size:13px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-soft); font-weight:700; margin:18px 4px 8px;}
-.audit-card{
-  background:var(--card); border-radius:var(--radius); padding:14px 16px; margin-bottom:10px;
-  display:flex; align-items:center; gap:12px; border:1px solid var(--border);
-}
-.audit-card .info{flex:1; min-width:0;}
-.audit-card .ceco{font-weight:700; font-size:15px;}
-.audit-card .meta{font-size:12.5px; color:var(--text-soft); margin-top:2px;}
-.audit-card .progress-ring{
-  width:44px;height:44px; border-radius:50%; flex-shrink:0;
-  display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700;
-  background:conic-gradient(var(--repsol-orange) calc(var(--pct,0)*1%), #eee 0);
-}
-.audit-card .progress-ring span{background:#fff; width:34px;height:34px;border-radius:50%; display:flex; align-items:center; justify-content:center;}
-.audit-card .del-btn{color:var(--bad); font-size:20px; padding:4px 8px;}
-.empty-state{text-align:center; color:var(--text-soft); padding:30px 16px; font-size:14px;}
+/* home */
+.big-btn{display:block;background:var(--card);border:1.5px dashed var(--orange);border-radius:14px;padding:22px 16px;text-align:center;color:var(--red);font-weight:700;font-size:16px;margin:14px;}
+.big-btn small{display:block;font-weight:400;color:var(--soft);font-size:13px;margin-top:4px;}
+.sec-title{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);font-weight:700;margin:16px 4px 8px;}
+.audit-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;}
+.audit-card .info{flex:1;min-width:0;}
+.audit-card .nm{font-weight:700;font-size:15px;}
+.audit-card .meta{font-size:12.5px;color:var(--soft);margin-top:2px;}
+.audit-card .del{color:var(--bad);font-size:20px;padding:6px 8px;}
+.empty{text-align:center;color:var(--soft);padding:26px 14px;font-size:14px;}
+.pill{display:inline-block;font-size:11px;font-weight:700;border-radius:20px;padding:2px 8px;margin-right:4px;color:#fff;}
 
-/* ---------- Header fields (auditoría) ---------- */
-.header-card{background:var(--card); border-radius:var(--radius); padding:14px 16px; margin:12px; border:1px solid var(--border);}
-.header-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px 14px;}
-.field{display:flex; flex-direction:column; gap:3px;}
-.field.full{grid-column:1/-1;}
-.field label{font-size:11px; color:var(--text-soft); font-weight:600; text-transform:uppercase; letter-spacing:.03em;}
-.field input, .field select{
-  border:1px solid var(--border); border-radius:9px; padding:9px 10px; font-size:14.5px; background:#fbfbfc; color:var(--text);
-}
-.field .readonly{padding:9px 0; font-size:14.5px; font-weight:600;}
+/* cabecera auditoría */
+.hcard{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 14px;margin:12px;}
+.hgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px 14px;}
+.fld{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.fld.full{grid-column:1/-1;}
+.fld label{font-size:10.5px;color:var(--soft);font-weight:700;text-transform:uppercase;letter-spacing:.03em;}
+.fld .ro{font-size:15px;font-weight:700;padding:3px 0;word-break:break-word;}
+.fld input{border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:14.5px;background:#fbfbfc;color:var(--text);}
+.linkbtn{display:inline-block;margin-top:10px;color:var(--red);font-weight:700;font-size:13.5px;border:1px solid var(--border);border-radius:10px;padding:8px 12px;background:#fff8f5;}
 
-/* ---------- Progress bar sticky ---------- */
-.progress-wrap{position:sticky; top:0; z-index:5; background:var(--bg); padding:10px 16px 6px;}
-.progress-bar-bg{height:8px; background:#e6e8ec; border-radius:6px; overflow:hidden;}
-.progress-bar-fill{height:100%; background:linear-gradient(90deg,var(--repsol-orange),var(--repsol-red)); border-radius:6px; transition:width .25s;}
-.progress-label{font-size:12px; color:var(--text-soft); margin-top:4px; display:flex; justify-content:space-between;}
+/* resumen y filtros */
+.stats{display:flex;gap:8px;padding:0 12px;}
+.stat{flex:1;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 4px;text-align:center;}
+.stat b{display:block;font-size:19px;}
+.stat span{font-size:10.5px;color:var(--soft);font-weight:700;text-transform:uppercase;}
+.filters{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;gap:7px;padding:10px 12px;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+.chip{flex-shrink:0;border:1.5px solid var(--border);background:#fff;border-radius:20px;padding:7px 13px;font-size:13px;font-weight:700;color:var(--soft);}
+.chip.on{background:var(--dark);border-color:var(--dark);color:#fff;}
 
-/* ---------- Area accordion ---------- */
-.area-block{margin:0 12px 12px;}
-.area-header{
-  background:var(--repsol-dark); color:#fff; padding:11px 14px; border-radius:12px;
-  display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:14px;
-}
-.area-header .cnt{font-size:12px; font-weight:400; opacity:.8;}
-.apartado-title{font-size:12px; font-weight:700; color:var(--text-soft); text-transform:uppercase; letter-spacing:.03em; margin:12px 4px 6px;}
+/* áreas y preguntas */
+.area{margin:4px 12px 0;}
+.area-h{background:var(--dark);color:#fff;padding:10px 13px;border-radius:12px;font-weight:700;font-size:13.5px;margin-top:10px;}
+.ap-t{font-size:11.5px;font-weight:700;color:var(--soft);text-transform:uppercase;letter-spacing:.03em;margin:11px 4px 6px;}
+.q{background:var(--card);border:1px solid var(--border);border-left:6px solid var(--none);border-radius:13px;padding:11px 12px;margin-bottom:9px;}
+.q.s-SI{border-left-color:var(--ok);} .q.s-NO{border-left-color:var(--bad);} .q.s-NA{border-left-color:var(--na);} .q.s-PTE{border-left-color:var(--pte);}
+.q-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;}
+.q-num{font-size:12px;font-weight:800;color:var(--soft);}
+.q-badge{font-size:12px;font-weight:800;}
+.s-SI .q-badge{color:var(--ok);} .s-NO .q-badge{color:var(--bad);} .s-NA .q-badge{color:var(--na);} .s-PTE .q-badge{color:var(--pte);} .s-none .q-badge{color:var(--none);}
+.q-text{font-size:14px;font-weight:700;line-height:1.35;color:#c96a00;margin-bottom:8px;}
+.q textarea{width:100%;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px;background:#fbfbfc;color:var(--text);resize:vertical;font-family:inherit;margin-bottom:8px;}
+.photos{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;}
+.th img{width:100%;height:100%;object-fit:cover;display:block;}
+.th .sz{position:absolute;left:0;bottom:0;background:rgba(0,0,0,.6);color:#fff;font-size:10px;font-weight:800;padding:1px 5px;border-top-right-radius:6px;}
+.add{width:64px;height:64px;border-radius:10px;border:1.5px dashed var(--orange);color:var(--orange);display:flex;align-items:center;justify-content:center;font-size:26px;background:#fff8f3;flex-shrink:0;}
+.cartel{border-left-color:var(--orange);}
 
-.q-card{
-  background:var(--card); border-radius:var(--radius); padding:13px 14px; margin-bottom:9px; border:1px solid var(--border);
-}
-.q-card.answered{border-color:#d7dae0;}
-.q-top{display:flex; gap:8px; align-items:flex-start; margin-bottom:10px;}
-.q-num{
-  width:26px;height:26px; border-radius:8px; background:#eef0f3; color:var(--text-soft); font-size:12px; font-weight:700;
-  display:flex; align-items:center; justify-content:center; flex-shrink:0;
-}
-.q-num.a-SI{background:#e2f5e9; color:var(--ok);}
-.q-num.a-NO{background:#fbe4e2; color:var(--bad);}
-.q-num.a-NA{background:#ececee; color:var(--na);}
-.q-num.a-PTE{background:#faf0d6; color:var(--pte);}
-.q-text{font-size:14px; font-weight:600; line-height:1.35; flex:1;}
+/* barra inferior */
+.bottombar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--border);padding:10px 14px calc(10px + var(--sb));display:flex;gap:10px;z-index:20;}
+.btn{flex:1;border:none;border-radius:12px;padding:14px;font-size:15px;font-weight:800;text-align:center;}
+.btn-p{background:linear-gradient(135deg,var(--orange),var(--red));color:#fff;}
+.btn-s{background:#eef0f3;color:var(--text);}
+.btn:disabled{opacity:.45;}
 
-.val-row{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-bottom:9px;}
-.val-btn{
-  border:1.5px solid var(--border); background:#fbfbfc; border-radius:9px; padding:9px 2px; font-size:12.5px; font-weight:700;
-  color:var(--text-soft); text-align:center;
-}
-.val-btn.sel-SI{background:var(--ok); border-color:var(--ok); color:#fff;}
-.val-btn.sel-NO{background:var(--bad); border-color:var(--bad); color:#fff;}
-.val-btn.sel-NA{background:var(--na); border-color:var(--na); color:#fff;}
-.val-btn.sel-PTE{background:var(--pte); border-color:var(--pte); color:#fff;}
+/* vista previa */
+.pv-wrap{padding:12px;}
+.pv-page{background:#fff;border:1px solid var(--border);border-radius:6px;padding:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);font-size:11px;}
+.pv-hdr,.pv-q{width:100%;border-collapse:collapse;table-layout:fixed;}
+.pv-hdr th,.pv-hdr td,.pv-q th,.pv-q td{border:1px solid #000;padding:4px 6px;text-align:left;vertical-align:top;font-size:11px;}
+.pv-hdr th{width:30%;}
+.pv-q{margin-top:14px;} .pv-q .pv-l{width:30%;}
+.pv-text{color:#f7941d;font-weight:800;}
+.pv-cartel-title{text-align:center;font-weight:800;margin:14px 0 8px;}
+.pv-cartel{text-align:center;} .pv-cartel img{max-width:100%;margin-bottom:6px;}
+.pv-body{display:flex;gap:8px;margin-top:6px;}
+.pv-com{width:30%;font-size:10px;word-break:break-word;}
+.pv-ph{width:70%;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;}
+.pv-ph img{max-width:100%;height:auto;}
+.pv-note{font-size:12px;color:var(--soft);padding:0 14px 6px;}
 
-.mini-row{display:flex; gap:8px; margin-bottom:8px;}
-.mini-field{flex:1; display:flex; flex-direction:column; gap:3px;}
-.mini-field label{font-size:10.5px; color:var(--text-soft); font-weight:600;}
-.mini-field input{border:1px solid var(--border); border-radius:8px; padding:7px 9px; font-size:13.5px; background:#fbfbfc;}
+/* editor de fotos */
+.modal{position:fixed;inset:0;background:#0b0b0f;z-index:100;display:flex;flex-direction:column;}
+.m-head{display:flex;justify-content:space-between;align-items:center;padding:calc(12px + var(--st)) 14px 10px;color:#fff;font-weight:700;}
+.m-head button{background:none;border:none;color:#fff;font-size:16px;font-weight:700;padding:6px 4px;}
+.m-head .strong{color:#ffb27a;}
+.stage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-height:0;}
+.stage canvas{touch-action:none;display:block;}
+.ed-info{color:#c9ccd3;font-size:12.5px;text-align:center;padding:6px;}
+.ed-tools{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:6px 12px calc(14px + var(--sb));}
+.ed-tools button{background:#2a2f3a;color:#fff;border:none;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:700;}
+.seg{display:flex;background:#2a2f3a;border-radius:10px;overflow:hidden;}
+.seg button{border-radius:0;background:transparent;padding:10px 12px;}
+.seg button.on{background:var(--orange);}
+.ed-del{background:#5a2020 !important;}
 
-.photos-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
-.photo-thumb{position:relative; width:60px; height:60px; border-radius:9px; overflow:hidden; border:1px solid var(--border); flex-shrink:0;}
-.photo-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
-.photo-thumb .rm{
-  position:absolute; top:2px; right:2px; background:rgba(0,0,0,.55); color:#fff; width:18px;height:18px;
-  border-radius:50%; font-size:11px; display:flex; align-items:center; justify-content:center; line-height:1;
-}
-.add-photo-btn{
-  width:60px; height:60px; border-radius:9px; border:1.5px dashed var(--repsol-orange); color:var(--repsol-orange);
-  display:flex; align-items:center; justify-content:center; font-size:22px; background:#fff8f3; flex-shrink:0;
-}
-
-/* ---------- Bottom bar ---------- */
-.bottombar{
-  position:fixed; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--border);
-  padding:10px 14px calc(10px + var(--safe-bottom)); display:flex; gap:10px; z-index:20;
-}
-.btn{
-  flex:1; border:none; border-radius:12px; padding:13px; font-size:15px; font-weight:700; text-align:center;
-}
-.btn-primary{background:linear-gradient(135deg,var(--repsol-orange),var(--repsol-red)); color:#fff;}
-.btn-secondary{background:#eef0f3; color:var(--text);}
-.btn:disabled{opacity:.5;}
-
-/* ---------- Modal (camera/crop) ---------- */
-.modal-overlay{
-  position:fixed; inset:0; background:rgba(10,10,14,.92); z-index:100; display:flex; flex-direction:column;
-}
-.modal-overlay.hidden{display:none;}
-.modal-header{display:flex; justify-content:space-between; align-items:center; padding:14px 16px; padding-top:calc(14px + var(--safe-top)); color:#fff;}
-.modal-header button{background:none; border:none; color:#fff; font-size:15px; font-weight:600; padding:6px 4px;}
-.crop-stage{flex:1; position:relative; overflow:hidden; display:flex; align-items:center; justify-content:center; touch-action:none;}
-.crop-stage canvas{max-width:100%; max-height:100%;}
-.crop-hint{color:#c9ccd3; font-size:12.5px; text-align:center; padding:8px 16px 4px;}
-.modal-footer{display:flex; gap:12px; padding:16px; padding-bottom:calc(16px + var(--safe-bottom));}
-.modal-footer .btn{padding:14px;}
-
-/* ---------- Toast ---------- */
-#toast{
-  position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#1e2430; color:#fff;
-  padding:10px 18px; border-radius:10px; font-size:13.5px; z-index:200; opacity:0; pointer-events:none; transition:opacity .25s;
-  max-width:88%; text-align:center;
-}
+.overlay{position:fixed;inset:0;background:rgba(10,10,14,.7);z-index:150;display:flex;align-items:center;justify-content:center;}
+.box{background:#fff;border-radius:16px;padding:24px 26px;text-align:center;max-width:280px;font-size:14px;font-weight:700;}
+.spin{width:34px;height:34px;border:3px solid #eee;border-top-color:var(--orange);border-radius:50%;margin:0 auto 12px;animation:sp 1s linear infinite;}
+@keyframes sp{to{transform:rotate(360deg);}}
+#toast{position:fixed;left:50%;bottom:calc(100px + var(--sb));transform:translateX(-50%);background:#1e2430;color:#fff;padding:10px 18px;border-radius:10px;font-size:13.5px;z-index:200;opacity:0;pointer-events:none;transition:opacity .25s;max-width:88%;text-align:center;}
 #toast.show{opacity:1;}
-
-/* ---------- Export progress ---------- */
-.export-overlay{
-  position:fixed; inset:0; background:rgba(10,10,14,.75); z-index:150; display:flex; align-items:center; justify-content:center;
-}
-.export-overlay.hidden{display:none;}
-.export-box{background:#fff; border-radius:16px; padding:26px 28px; text-align:center; width:80%; max-width:300px;}
-.spinner{width:34px;height:34px; border:3px solid #eee; border-top-color:var(--repsol-orange); border-radius:50%; margin:0 auto 14px; animation:spin 1s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
-
 input[type=file]{display:none;}
 </style>
 </head>
 <body>
 <div id="app">
-
-  <!-- ============ TOP BAR ============ -->
-  <div class="topbar" id="topbar">
+  <div class="topbar">
     <button class="icon-btn hidden" id="backBtn">‹</button>
-    <div style="flex:1;">
-      <h1 id="topTitle">Auditor SO</h1>
-      <div class="sub" id="topSub">Repsol · Supervisión Operativa</div>
-    </div>
+    <div class="t"><h1 id="topTitle">Anexo SO</h1><div class="sub" id="topSub">Repsol · Anexo fotográfico</div></div>
     <button class="icon-btn hidden" id="settingsBtn">⚙</button>
   </div>
 
-  <!-- ============ HOME SCREEN ============ -->
-  <div class="screen" id="screen-home">
-    <div class="home-actions">
-      <label class="big-btn" for="fileInputNew">
-        + Nueva auditoría
-        <small>Cargar Excel de la plataforma Repsol</small>
-      </label>
-      <input type="file" id="fileInputNew" accept=".xlsx">
-    </div>
-    <div class="pad" style="padding-top:0;">
-      <div class="section-title">Auditorías en curso</div>
-      <div id="ongoingList"></div>
-      <div class="section-title" id="finishedTitle" style="display:none;">Finalizadas</div>
-      <div id="finishedList"></div>
+  <!-- INICIO -->
+  <div class="screen" id="s-home">
+    <label class="big-btn" for="fileNew">+ Cargar Excel rellenado<small>El que descargas de Repsol, ya con SÍ / NO / N/A</small></label>
+    <input type="file" id="fileNew" accept=".xlsx">
+    <div class="pad" style="padding-top:0">
+      <div class="sec-title">Informes en curso</div><div id="ongoing"></div>
+      <div class="sec-title hidden" id="finTitle">Finalizados</div><div id="finished"></div>
     </div>
   </div>
 
-  <!-- ============ AUDIT SCREEN ============ -->
-  <div class="screen hidden" id="screen-audit">
-    <div class="header-card" id="headerCard"></div>
-    <div class="progress-wrap">
-      <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill" style="width:0%"></div></div>
-      <div class="progress-label"><span id="progressText">0 / 76 respondidas</span><span id="photoCount">0 fotos</span></div>
-    </div>
-    <div id="areasContainer"></div>
+  <!-- AUDITORÍA -->
+  <div class="screen hidden" id="s-audit">
+    <div class="hcard" id="hcard"></div>
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div id="list"></div>
   </div>
 
-  <!-- ============ BOTTOM BAR (audit screen) ============ -->
-  <div class="bottombar hidden" id="bottombar">
-    <button class="btn btn-secondary" id="saveBtn">Guardar</button>
-    <button class="btn btn-primary" id="finishBtn">Finalizar y exportar</button>
+  <!-- VISTA PREVIA -->
+  <div class="screen hidden" id="s-preview">
+    <div class="pv-note" id="pvNote"></div>
+    <div class="pv-wrap" id="pvBody"></div>
   </div>
 
-  <!-- ============ SETTINGS SCREEN ============ -->
-  <div class="screen hidden" id="screen-settings">
-    <div class="header-card">
-      <div class="header-grid">
-        <div class="field full">
-          <label>Nombre del auditor</label>
-          <input type="text" id="setAuditor" placeholder="SAMUEL VACA">
-        </div>
-        <div class="field full">
-          <label>D.A. (Dirección de Área) por defecto</label>
-          <input type="text" id="setDA" placeholder="NORESTE">
-        </div>
-      </div>
-    </div>
-    <div class="pad">
-      <button class="btn btn-primary" id="saveSettingsBtn" style="width:100%;">Guardar ajustes</button>
-    </div>
+  <!-- AJUSTES -->
+  <div class="screen hidden" id="s-settings">
+    <div class="hcard"><div class="hgrid">
+      <div class="fld full"><label>Nombre del auditor</label><input id="setAuditor" type="text"></div>
+      <div class="fld full"><label>D.A. por defecto</label><input id="setDA" type="text" placeholder="NORESTE"></div>
+    </div></div>
+    <div class="pad"><button class="btn btn-p" id="saveSet" style="width:100%">Guardar ajustes</button></div>
   </div>
 
-</div>
-
-<!-- ============ PHOTO MODAL ============ -->
-<div class="modal-overlay hidden" id="photoModal">
-  <div class="modal-header">
-    <button id="photoCancelBtn">Cancelar</button>
-    <span>Ajustar foto</span>
-    <button id="photoRotateBtn">⟳ Rotar</button>
+  <div class="bottombar hidden" id="bar-audit">
+    <button class="btn btn-p" id="previewBtn">Vista previa del informe</button>
   </div>
-  <div class="crop-stage" id="cropStage">
-    <canvas id="cropCanvas"></canvas>
-  </div>
-  <div class="crop-hint">Arrastra para mover · pellizca para hacer zoom</div>
-  <div class="modal-footer">
-    <button class="btn btn-secondary" id="photoRetakeBtn">Repetir</button>
-    <button class="btn btn-primary" id="photoUseBtn">Usar foto</button>
-  </div>
-</div>
-<input type="file" id="cameraInput" accept="image/*" capture="environment">
-<input type="file" id="galleryInput" accept="image/*">
-
-<!-- ============ EXPORT OVERLAY ============ -->
-<div class="export-overlay hidden" id="exportOverlay">
-  <div class="export-box">
-    <div class="spinner"></div>
-    <div id="exportStatus" style="font-size:14px; font-weight:600;">Generando archivos…</div>
+  <div class="bottombar hidden" id="bar-preview">
+    <button class="btn btn-s" id="pvOpen" disabled>Abrir PDF</button>
+    <button class="btn btn-p" id="pvSave" disabled>Guardar PDF</button>
   </div>
 </div>
 
+<!-- EDITOR DE FOTO -->
+<div class="modal hidden" id="editor">
+  <div class="m-head"><button id="edCancel">Cancelar</button><span id="edTitle">Ajustar foto</span><button id="edSave" class="strong">Guardar</button></div>
+  <div class="stage" id="edStage"><canvas id="edCanvas"></canvas></div>
+  <div class="ed-info" id="edInfo"></div>
+  <div class="ed-tools">
+    <button id="edRotL">⟲ 90°</button><button id="edRotR">⟳ 90°</button><button id="edReset">Todo</button>
+    <div class="seg" id="edSize"><button data-s="S">Pequeña</button><button data-s="M">Media</button><button data-s="L">Grande</button></div>
+    <button id="edDel" class="ed-del hidden">Eliminar</button>
+  </div>
+</div>
+<input type="file" id="filePhoto" accept="image/*" multiple>
+<input type="file" id="fileReload" accept=".xlsx">
+
+<div class="overlay hidden" id="busy"><div class="box"><div class="spin"></div><div id="busyMsg">Procesando…</div></div></div>
 <div id="toast"></div>
 
 <script src="xlsx.full.min.js"></script>
 <script src="jspdf.umd.min.js"></script>
-<script src="jszip.min.js"></script>
-<script src="questions.js"></script>
+<script src="core.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

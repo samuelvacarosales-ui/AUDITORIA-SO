@@ -1,783 +1,450 @@
 /* ============================================================
-   Auditor SO — lógica principal
+   app.js — interfaz de la app "Anexo SO"
    ============================================================ */
+const $ = id => document.getElementById(id);
+let db = null, cur = null, screen = 'home', filter = 'all', saveTimer = null, pdfBlob = null;
+let photoTarget = null;
 
-const VAL_OPTIONS = [
-  {key:'SI',  label:'SÍ',  pdfWord:'CORRECTO'},
-  {key:'NO',  label:'NO',  pdfWord:'NO CONFORME'},
-  {key:'NA',  label:'N/A', pdfWord:'N/A'},
-  {key:'PTE', label:'PTE', pdfWord:'PENDIENTE'},
-];
-
-let db = null;
-let currentAudit = null;   // objeto en memoria de la auditoría abierta
-let saveTimer = null;
-
-/* ---------------- IndexedDB ---------------- */
+/* ---------------- almacenamiento (IndexedDB) ---------------- */
 function openDB(){
-  return new Promise((resolve, reject)=>{
-    const req = indexedDB.open('auditorSO', 1);
-    req.onupgradeneeded = e=>{
-      const d = e.target.result;
-      if(!d.objectStoreNames.contains('audits')){
-        d.createObjectStore('audits', {keyPath:'id'});
-      }
-    };
-    req.onsuccess = e=>resolve(e.target.result);
-    req.onerror = e=>reject(e);
+  return new Promise((res,rej)=>{
+    const rq = indexedDB.open('anexoSO',1);
+    rq.onupgradeneeded = e=>{ const d=e.target.result; if(!d.objectStoreNames.contains('audits')) d.createObjectStore('audits',{keyPath:'id'}); };
+    rq.onsuccess = e=>res(e.target.result);
+    rq.onerror = e=>rej(e.target.error);
   });
 }
-function dbPut(audit){
-  return new Promise((resolve,reject)=>{
-    const tx = db.transaction('audits','readwrite');
-    tx.objectStore('audits').put(audit);
-    tx.oncomplete = ()=>resolve();
-    tx.onerror = e=>reject(e);
-  });
-}
-function dbGetAll(){
-  return new Promise((resolve,reject)=>{
-    const tx = db.transaction('audits','readonly');
-    const req = tx.objectStore('audits').getAll();
-    req.onsuccess = ()=>resolve(req.result);
-    req.onerror = e=>reject(e);
-  });
-}
-function dbDelete(id){
-  return new Promise((resolve,reject)=>{
-    const tx = db.transaction('audits','readwrite');
-    tx.objectStore('audits').delete(id);
-    tx.oncomplete = ()=>resolve();
-    tx.onerror = e=>reject(e);
-  });
-}
+const dbPut = a => new Promise((res,rej)=>{ const tx=db.transaction('audits','readwrite'); tx.objectStore('audits').put(a); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error); });
+const dbAll = () => new Promise((res,rej)=>{ const rq=db.transaction('audits').objectStore('audits').getAll(); rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); });
+const dbDel = id => new Promise((res,rej)=>{ const tx=db.transaction('audits','readwrite'); tx.objectStore('audits').delete(id); tx.oncomplete=res; tx.onerror=()=>rej(tx.error); });
 
-/* ---------------- Settings (localStorage) ---------------- */
 function getSettings(){
-  try{ return JSON.parse(localStorage.getItem('auditorSO_settings')) || {}; }
-  catch(e){ return {}; }
+  let s = {};
+  try{ s = JSON.parse(localStorage.getItem('anexoSO_settings'))||{}; }catch(e){}
+  return {auditor: s.auditor || 'SAMUEL VACA', da: (s.da!==undefined ? s.da : 'NORESTE')};
 }
-function saveSettings(s){ localStorage.setItem('auditorSO_settings', JSON.stringify(s)); }
+function toast(msg, ms){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms||2400);
+}
+function busy(msg){ $('busyMsg').textContent=msg||'Procesando…'; $('busy').classList.remove('hidden'); }
+function unbusy(){ $('busy').classList.add('hidden'); }
+const nextFrame = () => new Promise(r=>requestAnimationFrame(()=>r()));
 
-/* ---------------- Utilidades ---------------- */
-function toast(msg, ms=2200){
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  clearTimeout(toast._tm);
-  toast._tm = setTimeout(()=>t.classList.remove('show'), ms);
-}
-function sanitizeId(s){ return (s||'').toString().replace(/[^a-zA-Z0-9]/g,'_'); }
-function fmtDate(iso){
-  if(!iso) return '';
-  const d = new Date(iso);
-  if(isNaN(d)) return iso;
-  return d.toLocaleDateString('es-ES')+' '+d.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
-}
-
-/* ============================================================
-   NAVEGACIÓN
-   ============================================================ */
-function showScreen(id){
-  document.querySelectorAll('.screen').forEach(s=>s.classList.add('hidden'));
-  document.getElementById(id).classList.remove('hidden');
-  document.getElementById('bottombar').classList.toggle('hidden', id !== 'screen-audit');
-  document.getElementById('backBtn').classList.toggle('hidden', id === 'screen-home');
-  document.getElementById('settingsBtn').classList.toggle('hidden', id !== 'screen-home');
-  const titles = {
-    'screen-home':['Auditor SO','Repsol · Supervisión Operativa'],
-    'screen-audit':[currentAudit?currentAudit.ceco:'Auditoría', currentAudit?('CECO '+currentAudit.ceco):''],
-    'screen-settings':['Ajustes','Se guardan en este dispositivo'],
-  };
-  const [t,s] = titles[id]||['',''];
-  document.getElementById('topTitle').textContent = t;
-  document.getElementById('topSub').textContent = s;
+function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,600); }
+async function saveNow(){
+  if(!cur) return;
+  clearTimeout(saveTimer);
+  cur.updatedAt = Date.now();
+  try{ await dbPut(cur); }
+  catch(e){ console.error(e); toast('⚠ No se pudo guardar (¿almacenamiento lleno?)',4000); }
 }
 
-document.getElementById('backBtn').addEventListener('click', ()=>{
-  if(currentAudit) saveCurrentAudit(false);
-  currentAudit = null;
-  renderHome();
-  showScreen('screen-home');
-});
-document.getElementById('settingsBtn').addEventListener('click', ()=>{
-  const s = getSettings();
-  document.getElementById('setAuditor').value = s.auditor || '';
-  document.getElementById('setDA').value = s.da || '';
-  showScreen('screen-settings');
-});
-document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
-  saveSettings({
-    auditor: document.getElementById('setAuditor').value.trim(),
-    da: document.getElementById('setDA').value.trim(),
-  });
-  toast('Ajustes guardados');
-  showScreen('screen-home');
-});
+/* ---------------- navegación ---------------- */
+function showScreen(name){
+  screen = name;
+  ['home','audit','preview','settings'].forEach(n=>$('s-'+n).classList.toggle('hidden', n!==name));
+  $('bar-audit').classList.toggle('hidden', name!=='audit');
+  $('bar-preview').classList.toggle('hidden', name!=='preview');
+  $('backBtn').classList.toggle('hidden', name==='home');
+  $('settingsBtn').classList.toggle('hidden', name!=='home');
+  let t='Anexo SO', s='Repsol · Anexo fotográfico';
+  if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
+  if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
+  if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
+  $('topTitle').textContent=t; $('topSub').textContent=s;
+  $('s-'+name).scrollTop = 0;
+}
+$('backBtn').onclick = async ()=>{
+  if(screen==='preview'){ showScreen('audit'); return; }
+  if(screen==='audit'){ await saveNow(); cur=null; await renderHome(); }
+  showScreen('home');
+};
+$('settingsBtn').onclick = ()=>{
+  const s=getSettings(); $('setAuditor').value=s.auditor; $('setDA').value=s.da; showScreen('settings');
+};
+$('saveSet').onclick = ()=>{
+  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA', da:$('setDA').value.trim()}));
+  toast('Ajustes guardados'); showScreen('home');
+};
 
-/* ============================================================
-   HOME — listado de auditorías
-   ============================================================ */
+/* ---------------- inicio ---------------- */
 async function renderHome(){
-  const audits = await dbGetAll();
-  audits.sort((a,b)=> (b.updatedAt||0) - (a.updatedAt||0));
-  const ongoing = audits.filter(a=>a.status!=='finalizado');
-  const finished = audits.filter(a=>a.status==='finalizado');
-
-  const ongoingList = document.getElementById('ongoingList');
-  const finishedList = document.getElementById('finishedList');
-  ongoingList.innerHTML = '';
-  finishedList.innerHTML = '';
-
-  if(ongoing.length===0){
-    ongoingList.innerHTML = '<div class="empty-state">No tienes auditorías en curso.<br>Carga un Excel para empezar una nueva.</div>';
-  }
-  ongoing.forEach(a=> ongoingList.appendChild(buildAuditCard(a)));
-
-  document.getElementById('finishedTitle').style.display = finished.length? 'block':'none';
-  finished.forEach(a=> finishedList.appendChild(buildAuditCard(a)));
+  const all = (await dbAll()).sort((a,b)=>b.updatedAt-a.updatedAt);
+  const on=$('ongoing'), fin=$('finished'); on.innerHTML=''; fin.innerHTML='';
+  const ongoing = all.filter(a=>a.status!=='finalizado'), done = all.filter(a=>a.status==='finalizado');
+  if(!ongoing.length) on.innerHTML='<div class="empty">No tienes informes en curso.<br>Carga el Excel rellenado de una estación para empezar.</div>';
+  ongoing.forEach(a=>on.appendChild(auditCard(a)));
+  $('finTitle').classList.toggle('hidden', !done.length);
+  done.forEach(a=>fin.appendChild(auditCard(a)));
+}
+function auditCard(a){
+  const st = auditStats(a);
+  const d = document.createElement('div'); d.className='audit-card';
+  d.innerHTML = '<div class="info"><div class="nm">'+esc(a.name)+' · '+esc(a.ceco)+'</div>'+
+    '<div class="meta">'+esc(a.fecha)+' · '+st.photos+' fotos</div>'+
+    '<div class="meta"><span class="pill" style="background:var(--bad)">'+st.NO+' no conformes</span>'+
+    (st.NO? '<span class="pill" style="background:'+(st.ncSinFoto?'var(--pte)':'var(--ok)')+'">'+(st.ncSinFoto? st.ncSinFoto+' sin foto':'todas con foto')+'</span>':'')+'</div></div>'+
+    '<div class="del">🗑</div>';
+  d.querySelector('.info').onclick = ()=>openAudit(a);
+  d.querySelector('.del').onclick = async ev=>{
+    ev.stopPropagation();
+    if(confirm('¿Eliminar este informe y sus fotos de este dispositivo? No se puede deshacer.')){ await dbDel(a.id); renderHome(); }
+  };
+  return d;
 }
 
-function buildAuditCard(a){
-  const total = 76;
-  const answered = Object.values(a.answers||{}).filter(x=>x.valoracion).length;
-  const pct = Math.round(answered/total*100);
-  const photos = Object.values(a.answers||{}).reduce((s,x)=>s+((x.photos||[]).length),0);
-
-  const card = document.createElement('div');
-  card.className = 'audit-card';
-  card.innerHTML = `
-    <div class="progress-ring" style="--pct:${pct}"><span>${pct}%</span></div>
-    <div class="info">
-      <div class="ceco">${a.ceco || '(sin CECO)'}</div>
-      <div class="meta">${a.fecha||''} · ${answered}/${total} preguntas · ${photos} fotos</div>
-      <div class="meta">Actualizado ${fmtDate(a.updatedAt)}</div>
-    </div>
-    <div class="del-btn">🗑</div>
-  `;
-  card.querySelector('.info').addEventListener('click', ()=> openAudit(a.id));
-  card.querySelector('.progress-ring').addEventListener('click', ()=> openAudit(a.id));
-  card.querySelector('.del-btn').addEventListener('click', async (e)=>{
-    e.stopPropagation();
-    if(confirm('¿Eliminar esta auditoría de este dispositivo? No se puede deshacer.')){
-      await dbDelete(a.id);
-      renderHome();
-    }
-  });
-  return card;
-}
-
-async function openAudit(id){
-  const all = await dbGetAll();
-  currentAudit = all.find(a=>a.id===id);
-  if(!currentAudit){ toast('No se ha encontrado la auditoría'); return; }
-  renderAuditScreen();
-  showScreen('screen-audit');
-}
-
-/* ============================================================
-   CARGA DE EXCEL NUEVO
-   ============================================================ */
-document.getElementById('fileInputNew').addEventListener('change', async (e)=>{
-  const file = e.target.files[0];
-  e.target.value = '';
+/* ---------------- importar Excel ---------------- */
+async function handleExcel(file){
   if(!file) return;
+  try{
+    busy('Leyendo Excel…');
+    const buf = await file.arrayBuffer();
+    const parsed = parseWorkbook(buf);
+    const id = sanitizeId(parsed.meta.ceco)+'_'+sanitizeId(parsed.meta.fecha);
+    const existing = (await dbAll()).find(a=>a.id===id);
+    unbusy();
+    if(existing){
+      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos y comentarios.')) return;
+      cur = mergeAudit(existing, parsed, file.name);
+    }else{
+      cur = newAudit(parsed, file.name, getSettings());
+    }
+    await saveNow();
+    filter='all';
+    renderAudit(); showScreen('audit');
+    const sin = cur.questions.filter(q=>!q.status).length;
+    toast(sin ? ('Excel leído. ⚠ '+sin+' preguntas sin valoración en el Excel') : ('Excel leído: '+cur.questions.length+' preguntas'), 3200);
+  }catch(err){
+    unbusy(); console.error(err);
+    alert('No se ha podido leer este Excel.\n\n'+(err&&err.message?err.message:err));
+  }
+}
+$('fileNew').onchange = e=>{ const f=e.target.files[0]; e.target.value=''; handleExcel(f); };
+$('fileReload').onchange = e=>{ const f=e.target.files[0]; e.target.value=''; handleExcel(f); };
 
-  const missingLibs = checkLibsLoaded();
-  if(missingLibs.length){
-    alert('No se puede leer el Excel porque faltan por cargar: '+missingLibs.join(', ')+'.\nRevisa que esos archivos estén subidos en la raíz del repositorio de GitHub.');
+async function openAudit(a){ cur=a; filter='all'; renderAudit(); showScreen('audit'); }
+
+/* ---------------- pantalla de auditoría ---------------- */
+function renderAudit(){
+  renderHeaderCard(); renderStats(); renderFilters(); renderList();
+}
+function renderHeaderCard(){
+  const a=cur;
+  $('hcard').innerHTML =
+   '<div class="hgrid">'+
+   '<div class="fld"><label>Centro de coste</label><div class="ro">'+esc(a.ceco)+'</div></div>'+
+   '<div class="fld"><label>Fecha</label><div class="ro">'+esc(a.fecha)+'</div></div>'+
+   '<div class="fld full"><label>Nombre E.S.</label><div class="ro">'+esc(a.name)+'</div></div>'+
+   '<div class="fld"><label>D.A.</label><input id="fDA" value="'+esc(a.da||'')+'"></div>'+
+   '<div class="fld"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
+   '<label class="linkbtn" for="fileReload">↻ Actualizar desde un Excel nuevo</label>';
+  $('fDA').oninput = e=>{ cur.da=e.target.value; scheduleSave(); };
+  $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
+}
+function renderStats(){
+  const st=auditStats(cur), otros=st.PTE+st[''];
+  const box=(n,l,c)=>'<div class="stat"><b style="color:'+c+'">'+n+'</b><span>'+l+'</span></div>';
+  $('stats').innerHTML = box(st.SI,'Correcto','var(--ok)')+box(st.NO,'No conf.','var(--bad)')+box(st.NA,'NA','#000')+
+    (otros?box(otros,'Otros','var(--pte)'):'')+box(st.photos,'Fotos','var(--orange)');
+}
+function renderFilters(){
+  const st=auditStats(cur);
+  const defs=[['all','Todas ('+cur.questions.length+')'],['nc','No conformes ('+st.NO+')'],['ncs','NC sin foto ('+st.ncSinFoto+')'],['ph','Con fotos']];
+  $('filters').innerHTML='';
+  defs.forEach(([k,l])=>{
+    const b=document.createElement('button'); b.className='chip'+(filter===k?' on':''); b.textContent=l;
+    b.onclick=()=>{ filter=k; renderFilters(); renderList(); };
+    $('filters').appendChild(b);
+  });
+}
+function refreshTop(){ renderStats(); renderFilters(); }
+function matches(q){
+  const n=(cur.photos[q.num]||[]).length;
+  if(filter==='nc') return q.status==='NO';
+  if(filter==='ncs') return q.status==='NO' && n===0;
+  if(filter==='ph') return n>0;
+  return true;
+}
+function renderList(){
+  const root=$('list'); root.innerHTML='';
+  if(filter==='all' || filter==='ph'){
+    const c=document.createElement('div'); c.className='area';
+    c.appendChild(photoCard(0)); root.appendChild(c);
+  }
+  let lastArea=null, lastAp=null, areaEl=null, shown=0;
+  cur.questions.forEach(q=>{
+    if(!matches(q)) return;
+    shown++;
+    if(q.area!==lastArea){
+      areaEl=document.createElement('div'); areaEl.className='area';
+      areaEl.innerHTML='<div class="area-h">'+esc(q.area)+' · '+esc(q.areaName)+'</div>';
+      root.appendChild(areaEl); lastArea=q.area; lastAp=null;
+    }
+    if(q.apartado!==lastAp && q.apartado && q.apartado!==q.areaName){
+      const t=document.createElement('div'); t.className='ap-t'; t.textContent=q.apartado; areaEl.appendChild(t);
+    }
+    lastAp=q.apartado;
+    areaEl.appendChild(questionCard(q));
+  });
+  if(!shown) root.insertAdjacentHTML('beforeend','<div class="empty">No hay preguntas en este filtro.</div>');
+}
+
+function questionCard(q){
+  const key = q.status || 'none';
+  const el=document.createElement('div'); el.className='q s-'+key; el.dataset.num=q.num;
+  el.innerHTML =
+    '<div class="q-head"><span class="q-num">PREGUNTA '+q.num+'</span><span class="q-badge">'+STATUS[q.status].word+'</span></div>'+
+    '<div class="q-text">'+esc(q.text)+'</div>'+
+    '<textarea rows="2" placeholder="Comentario para el informe (opcional)"></textarea>'+
+    '<div class="photos"></div>';
+  const ta=el.querySelector('textarea'); ta.value=commentFor(cur,q);
+  ta.oninput=()=>{ cur.comments[q.num]=ta.value; scheduleSave(); };
+  fillPhotos(el.querySelector('.photos'), q.num);
+  return el;
+}
+function photoCard(num){
+  const el=document.createElement('div'); el.className='q cartel'; el.dataset.num=num;
+  el.innerHTML='<div class="q-head"><span class="q-num">CARTEL IDENTIFICACIÓN ES</span></div>'+
+    '<div class="q-text" style="color:var(--soft);font-weight:600;font-size:13px">Foto del cartel de la estación (sale al inicio del informe)</div><div class="photos"></div>';
+  fillPhotos(el.querySelector('.photos'), num);
+  return el;
+}
+function fillPhotos(row, num){
+  row.innerHTML='';
+  (cur.photos[num]||[]).forEach((p,i)=>{
+    const t=document.createElement('div'); t.className='th';
+    t.innerHTML='<img src="'+(p.thumb||p.data)+'"><div class="sz">'+(p.size||'M')+'</div>';
+    t.onclick=()=>editPhoto(num,i);
+    row.appendChild(t);
+  });
+  const add=document.createElement('div'); add.className='add'; add.textContent='+';
+  add.onclick=()=>{ photoTarget=num; $('filePhoto').click(); };
+  row.appendChild(add);
+}
+function refreshCard(num){
+  const el=document.querySelector('[data-num="'+num+'"]');
+  if(el) fillPhotos(el.querySelector('.photos'), num);
+  refreshTop();
+}
+
+/* ---------------- añadir / editar fotos ---------------- */
+function loadImage(src){
+  return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error('No se pudo abrir la imagen')); i.src=src; });
+}
+function scaledDataURL(img, maxSide, q){
+  const w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+  const s=Math.min(1, maxSide/Math.max(w,h));
+  const c=document.createElement('canvas'); c.width=Math.round(w*s); c.height=Math.round(h*s);
+  c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+  return c.toDataURL('image/jpeg',q);
+}
+$('filePhoto').onchange = async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  const num=photoTarget; if(num===null||num===undefined) return;
+  for(let i=0;i<files.length;i++){
+    try{
+      busy('Abriendo foto…');
+      const url=URL.createObjectURL(files[i]);
+      const img=await loadImage(url);
+      const orig=scaledDataURL(img,1600,0.85);
+      URL.revokeObjectURL(url);
+      unbusy();
+      const res=await openEditor({orig, size:'M', canDelete:false, title:files.length>1?('Foto '+(i+1)+' de '+files.length):'Ajustar foto'});
+      if(!res || res.deleted) break;
+      (cur.photos[num]=cur.photos[num]||[]).push({orig, data:res.data, thumb:res.thumb, w:res.w, h:res.h, size:res.size, edit:res.edit});
+      await saveNow(); refreshCard(num);
+    }catch(err){ unbusy(); console.error(err); alert('No se pudo procesar la foto: '+err.message); break; }
+  }
+};
+async function editPhoto(num,i){
+  const p=cur.photos[num][i]; if(!p) return;
+  const res=await openEditor({orig:p.orig, edit:p.edit, size:p.size, canDelete:true, title:'Editar foto'});
+  if(!res) return;
+  if(res.deleted) cur.photos[num].splice(i,1);
+  else Object.assign(p,{data:res.data,thumb:res.thumb,w:res.w,h:res.h,size:res.size,edit:res.edit});
+  await saveNow(); refreshCard(num);
+}
+
+/* ---------------- editor de foto (recorte libre, rotar, tamaño) ---------------- */
+const ED = {rc:null, drag:null};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+
+function makeRotated(img, rot){
+  const w=img.naturalWidth, h=img.naturalHeight, swap=(rot%180!==0);
+  const c=document.createElement('canvas'); c.width=swap?h:w; c.height=swap?w:h;
+  const x=c.getContext('2d'); x.translate(c.width/2,c.height/2); x.rotate(rot*Math.PI/180); x.drawImage(img,-w/2,-h/2);
+  return c;
+}
+function edRebuild(crop){
+  ED.rc=makeRotated(ED.img,ED.rot);
+  ED.crop = crop ? {x:crop.x,y:crop.y,w:crop.w,h:crop.h} : {x:0,y:0,w:ED.rc.width,h:ED.rc.height};
+}
+function edLayout(){
+  const st=$('edStage'); const sw=st.clientWidth-16, sh=st.clientHeight-16;
+  ED.scale=Math.min(sw/ED.rc.width, sh/ED.rc.height);
+  ED.dw=ED.rc.width*ED.scale; ED.dh=ED.rc.height*ED.scale;
+}
+function edDraw(){
+  if(!ED.rc) return;
+  const c=$('edCanvas'), dpr=window.devicePixelRatio||1, ctx=c.getContext('2d');
+  c.width=Math.round(ED.dw*dpr); c.height=Math.round(ED.dh*dpr); c.style.width=ED.dw+'px'; c.style.height=ED.dh+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.drawImage(ED.rc,0,0,ED.dw,ED.dh);
+  const s=ED.scale, cr=ED.crop, x=cr.x*s, y=cr.y*s, w=cr.w*s, h=cr.h*s;
+  ctx.fillStyle='rgba(0,0,0,.58)';
+  ctx.fillRect(0,0,ED.dw,y); ctx.fillRect(0,y+h,ED.dw,ED.dh-y-h); ctx.fillRect(0,y,x,h); ctx.fillRect(x+w,y,ED.dw-x-w,h);
+  ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=1;
+  for(let i=1;i<3;i++){ ctx.beginPath(); ctx.moveTo(x+w*i/3,y); ctx.lineTo(x+w*i/3,y+h); ctx.moveTo(x,y+h*i/3); ctx.lineTo(x+w,y+h*i/3); ctx.stroke(); }
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
+  edHandles().forEach(hd=>{
+    ctx.fillStyle='#fff'; ctx.strokeStyle='#f2711c'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.rect(hd.x-8,hd.y-8,16,16); ctx.fill(); ctx.stroke();
+  });
+  $('edInfo').textContent=Math.round(cr.w)+' × '+Math.round(cr.h)+' px · arrastra los cuadros para ajustar ancho y alto';
+}
+function edHandles(){
+  const s=ED.scale, c=ED.crop, x=c.x*s, y=c.y*s, w=c.w*s, h=c.h*s;
+  return [{n:'tl',x:x,y:y},{n:'t',x:x+w/2,y:y},{n:'tr',x:x+w,y:y},{n:'r',x:x+w,y:y+h/2},
+          {n:'br',x:x+w,y:y+h},{n:'b',x:x+w/2,y:y+h},{n:'bl',x:x,y:y+h},{n:'l',x:x,y:y+h/2}];
+}
+function edPos(e){ const r=$('edCanvas').getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+function edHit(p){
+  let best=null, bd=30;
+  edHandles().forEach(h=>{ const d=Math.hypot(h.x-p.x,h.y-p.y); if(d<bd){bd=d;best=h.n;} });
+  if(best) return best;
+  const s=ED.scale,c=ED.crop;
+  if(p.x>=c.x*s&&p.x<=(c.x+c.w)*s&&p.y>=c.y*s&&p.y<=(c.y+c.h)*s) return 'move';
+  return null;
+}
+function edApply(dx,dy){
+  const d=ED.drag, c0=ED.start, W=ED.rc.width, H=ED.rc.height, MIN=Math.max(30,Math.min(W,H)*0.05);
+  let {x,y,w,h}=c0;
+  if(d==='move'){ x=clamp(c0.x+dx,0,W-w); y=clamp(c0.y+dy,0,H-h); }
+  else{
+    if(d.includes('l')){ const nx=clamp(c0.x+dx,0,c0.x+c0.w-MIN); w=c0.x+c0.w-nx; x=nx; }
+    if(d.includes('r')){ w=clamp(c0.w+dx,MIN,W-c0.x); }
+    if(d.includes('t')){ const ny=clamp(c0.y+dy,0,c0.y+c0.h-MIN); h=c0.y+c0.h-ny; y=ny; }
+    if(d.includes('b')){ h=clamp(c0.h+dy,MIN,H-c0.y); }
+  }
+  ED.crop={x,y,w,h};
+}
+(function bindEditor(){
+  const cv=$('edCanvas');
+  cv.addEventListener('pointerdown',e=>{
+    if(!ED.rc) return;
+    const p=edPos(e), d=edHit(p); if(!d) return;
+    ED.drag=d; ED.p0=p; ED.start={...ED.crop};
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(!ED.drag) return;
+    const p=edPos(e); edApply((p.x-ED.p0.x)/ED.scale,(p.y-ED.p0.y)/ED.scale); edDraw(); e.preventDefault();
+  });
+  const end=()=>{ ED.drag=null; };
+  cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+  window.addEventListener('resize',()=>{ if(ED.rc && !$('editor').classList.contains('hidden')){ edLayout(); edDraw(); } });
+
+  $('edRotL').onclick=()=>edRotate(-90);
+  $('edRotR').onclick=()=>edRotate(90);
+  $('edReset').onclick=()=>{ ED.crop={x:0,y:0,w:ED.rc.width,h:ED.rc.height}; edDraw(); };
+  $('edSize').querySelectorAll('button').forEach(b=>b.onclick=()=>{ ED.size=b.dataset.s; edSizeUI(); });
+  $('edCancel').onclick=()=>edClose(null);
+  $('edDel').onclick=()=>{ if(confirm('¿Eliminar esta foto?')) edClose({deleted:true}); };
+  $('edSave').onclick=edSave;
+})();
+function edRotate(delta){
+  ED.rot=(ED.rot+delta+360)%360; edRebuild(null); edLayout(); edDraw();
+}
+function edSizeUI(){ $('edSize').querySelectorAll('button').forEach(b=>b.classList.toggle('on', b.dataset.s===ED.size)); }
+function edSave(){
+  const cr=ED.crop, s=Math.min(1,1400/Math.max(cr.w,cr.h));
+  const oc=document.createElement('canvas'); oc.width=Math.max(1,Math.round(cr.w*s)); oc.height=Math.max(1,Math.round(cr.h*s));
+  oc.getContext('2d').drawImage(ED.rc,cr.x,cr.y,cr.w,cr.h,0,0,oc.width,oc.height);
+  const ts=Math.min(1,200/Math.max(oc.width,oc.height));
+  const tc=document.createElement('canvas'); tc.width=Math.max(1,Math.round(oc.width*ts)); tc.height=Math.max(1,Math.round(oc.height*ts));
+  tc.getContext('2d').drawImage(oc,0,0,tc.width,tc.height);
+  edClose({data:oc.toDataURL('image/jpeg',0.82), thumb:tc.toDataURL('image/jpeg',0.7), w:oc.width, h:oc.height, size:ED.size, edit:{rot:ED.rot, crop:{...cr}}});
+}
+function edClose(result){
+  $('editor').classList.add('hidden'); ED.rc=null; ED.drag=null;
+  const r=ED.resolve; ED.resolve=null; if(r) r(result);
+}
+async function openEditor(opts){
+  const img=await loadImage(opts.orig);
+  return new Promise(async resolve=>{
+    ED.resolve=resolve; ED.img=img; ED.size=opts.size||'M'; ED.rot=opts.edit?opts.edit.rot:0;
+    $('edTitle').textContent=opts.title||'Ajustar foto';
+    $('edDel').classList.toggle('hidden',!opts.canDelete);
+    edSizeUI();
+    $('editor').classList.remove('hidden');
+    await nextFrame(); await nextFrame();
+    edRebuild(opts.edit?opts.edit.crop:null); edLayout(); edDraw();
+  });
+}
+
+/* ---------------- vista previa y PDF ---------------- */
+$('previewBtn').onclick = async ()=>{
+  await saveNow();
+  $('pvBody').innerHTML = buildPreviewHTML(cur);
+  $('pvNote').textContent = 'Generando PDF…';
+  $('pvOpen').disabled = true; $('pvSave').disabled = true; pdfBlob = null;
+  showScreen('preview');
+  const myAudit = cur;
+  await new Promise(r=>setTimeout(r,60));
+  try{
+    const b = buildPdfBlob(myAudit);
+    if(cur !== myAudit) return;
+    pdfBlob = b;
+    $('pvNote').textContent = 'Vista aproximada. El PDF respeta la misma estructura en páginas A4 ('+Math.round(b.size/1024)+' KB).';
+    $('pvOpen').disabled = false; $('pvSave').disabled = false;
+  }catch(err){
+    console.error(err);
+    $('pvNote').textContent = 'No se pudo generar el PDF: '+err.message;
+  }
+};
+function downloadBlob(blob, name){
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=name; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); },1500);
+}
+$('pvSave').onclick = async ()=>{
+  if(!pdfBlob) return;
+  const name = pdfFileName(cur);
+  const file = new File([pdfBlob], name, {type:'application/pdf'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({files:[file], title:name});
+    }else{
+      downloadBlob(pdfBlob, name);
+    }
+    cur.status='finalizado'; await saveNow(); toast('PDF listo ✔');
+  }catch(err){
+    if(err && err.name==='AbortError') return;
+    console.error(err); downloadBlob(pdfBlob, name);
+  }
+};
+$('pvOpen').onclick = ()=>{
+  if(!pdfBlob) return;
+  window.open(URL.createObjectURL(pdfBlob), '_blank');
+};
+
+/* ---------------- arranque ---------------- */
+function missingLibs(){
+  const m=[];
+  if(typeof XLSX==='undefined') m.push('xlsx.full.min.js');
+  if(typeof jspdf==='undefined') m.push('jspdf.umd.min.js');
+  if(typeof parseWorkbook==='undefined') m.push('core.js');
+  return m;
+}
+(async function init(){
+  const m=missingLibs();
+  if(m.length){
+    alert('La app no ha podido cargar estos archivos:\n\n'+m.join('\n')+'\n\nRevisa que estén subidos a GitHub, sueltos en la raíz junto a index.html.');
     return;
   }
-
-  try{
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, {type:'array'});
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    if(!ws) throw new Error('El archivo no tiene ninguna hoja legible (SheetNames vacío).');
-    const get = (addr)=> (ws[addr]? ws[addr].v : '') ;
-
-    const zona = get('B3');
-    const cecoRaw = (get('A2')||'').toString();
-    const ceco = cecoRaw.replace(/^Centro de Coste:\s*/i,'').trim();
-    const fecha = get('G3');
-    const cPN = get('B5');
-    const codSup = get('G5');
-
-    if(!ceco && !zona && !fecha){
-      throw new Error('Se ha leído el Excel pero las celdas A2/B3/G3 están vacías. ¿Es este el Excel original descargado de la plataforma (sin filas/columnas movidas)?');
-    }
-
-    const settings = getSettings();
-    const id = sanitizeId(ceco)+'_'+sanitizeId(fecha)+'_'+Date.now();
-
-    currentAudit = {
-      id, ceco, zona, fecha, cPN, codSupervisor: codSup,
-      da: settings.da || '',
-      auditor: settings.auditor || '',
-      fileName: file.name,
-      originalXlsx: buf,           // se guarda tal cual para reabrir al exportar
-      answers: {},                 // {num: {valor, valoracion, obs, photos:[{data,comment}]}}
-      status: 'en_curso',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    await dbPut(currentAudit);
-    toast('Excel cargado: '+ (ceco||file.name));
-    renderAuditScreen();
-    showScreen('screen-audit');
-  }catch(err){
-    console.error(err);
-    alert('No se ha podido leer este Excel.\n\nDetalle técnico: '+ (err && err.message ? err.message : err) +'\n\nComprueba que es el archivo descargado de la plataforma de Repsol sin modificar su estructura.');
-  }
-});
-
-/* ============================================================
-   PANTALLA DE AUDITORÍA
-   ============================================================ */
-function renderAuditScreen(){
-  renderHeaderCard();
-  renderAreas();
-  updateProgress();
-}
-
-function renderHeaderCard(){
-  const a = currentAudit;
-  const el = document.getElementById('headerCard');
-  el.innerHTML = `
-    <div class="header-grid">
-      <div class="field"><label>Centro de coste</label><div class="readonly">${a.ceco||'—'}</div></div>
-      <div class="field"><label>Zona</label><div class="readonly">${a.zona||'—'}</div></div>
-      <div class="field"><label>Fecha</label><div class="readonly">${a.fecha||'—'}</div></div>
-      <div class="field"><label>Cº PN</label><div class="readonly">${a.cPN||'—'}</div></div>
-      <div class="field full"><label>D.A. (Dirección de Área)</label>
-        <input type="text" id="fld-da" value="${a.da||''}" placeholder="Ej. NORESTE">
-      </div>
-      <div class="field full"><label>Auditor</label>
-        <input type="text" id="fld-auditor" value="${a.auditor||''}" placeholder="Nombre del auditor">
-      </div>
-    </div>
-  `;
-  document.getElementById('fld-da').addEventListener('input', e=>{ currentAudit.da = e.target.value; scheduleSave(); });
-  document.getElementById('fld-auditor').addEventListener('input', e=>{ currentAudit.auditor = e.target.value; scheduleSave(); });
-}
-
-function renderAreas(){
-  const container = document.getElementById('areasContainer');
-  container.innerHTML = '';
-
-  const areas = [];
-  QUESTIONS.forEach(q=>{
-    let area = areas.find(x=>x.letra===q.area);
-    if(!area){ area = {letra:q.area, nombre:q.areaName, apartados:[]}; areas.push(area); }
-    let ap = area.apartados.find(x=>x.nombre===q.apartado);
-    if(!ap){ ap = {nombre:q.apartado, preguntas:[]}; area.apartados.push(ap); }
-    ap.preguntas.push(q);
-  });
-
-  areas.forEach(area=>{
-    const block = document.createElement('div');
-    block.className = 'area-block';
-    const answeredInArea = area.apartados.flatMap(ap=>ap.preguntas)
-      .filter(q=> currentAudit.answers[q.num] && currentAudit.answers[q.num].valoracion).length;
-    const totalInArea = area.apartados.flatMap(ap=>ap.preguntas).length;
-
-    const header = document.createElement('div');
-    header.className = 'area-header';
-    header.innerHTML = `<span>${area.letra} · ${area.nombre}</span><span class="cnt">${answeredInArea}/${totalInArea}</span>`;
-    block.appendChild(header);
-
-    area.apartados.forEach(ap=>{
-      const apTitle = document.createElement('div');
-      apTitle.className = 'apartado-title';
-      apTitle.textContent = ap.nombre;
-      block.appendChild(apTitle);
-
-      ap.preguntas.forEach(q=>{
-        block.appendChild(buildQuestionCard(q));
-      });
-    });
-
-    container.appendChild(block);
-  });
-}
-
-function buildQuestionCard(q){
-  if(!currentAudit.answers[q.num]) currentAudit.answers[q.num] = {valor:'', valoracion:'', obs:'', photos:[]};
-  const ans = currentAudit.answers[q.num];
-
-  const card = document.createElement('div');
-  card.className = 'q-card' + (ans.valoracion? ' answered':'');
-  card.dataset.num = q.num;
-
-  card.innerHTML = `
-    <div class="q-top">
-      <div class="q-num ${ans.valoracion?('a-'+ans.valoracion):''}">${q.num}</div>
-      <div class="q-text">${q.text}</div>
-    </div>
-    <div class="val-row">
-      ${VAL_OPTIONS.map(v=>`<div class="val-btn ${ans.valoracion===v.key?('sel-'+v.key):''}" data-val="${v.key}">${v.label}</div>`).join('')}
-    </div>
-    <div class="mini-row">
-      <div class="mini-field"><label>Valor / Fecha</label><input type="text" maxlength="10" value="${ans.valor||''}" data-field="valor"></div>
-      <div class="mini-field"><label>Observaciones</label><input type="text" maxlength="100" value="${ans.obs||''}" data-field="obs"></div>
-    </div>
-    <div class="photos-row" data-photos></div>
-  `;
-
-  card.querySelectorAll('.val-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const val = btn.dataset.val;
-      ans.valoracion = (ans.valoracion===val)? '' : val;
-      card.querySelectorAll('.val-btn').forEach(b=>b.className = 'val-btn' + (b.dataset.val===ans.valoracion? (' sel-'+ans.valoracion):''));
-      card.querySelector('.q-num').className = 'q-num' + (ans.valoracion?(' a-'+ans.valoracion):'');
-      card.classList.toggle('answered', !!ans.valoracion);
-      scheduleSave();
-      updateProgress();
-      renderAreaCounts();
-    });
-  });
-  card.querySelector('[data-field="valor"]').addEventListener('input', e=>{ ans.valor = e.target.value; scheduleSave(); });
-  card.querySelector('[data-field="obs"]').addEventListener('input', e=>{ ans.obs = e.target.value; scheduleSave(); });
-
-  renderPhotos(card, q.num);
-  return card;
-}
-
-function renderAreaCounts(){
-  document.querySelectorAll('.area-block').forEach(block=>{
-    const total = block.querySelectorAll('.q-card').length;
-    const answered = block.querySelectorAll('.q-card.answered').length;
-    block.querySelector('.cnt').textContent = answered+'/'+total;
-  });
-}
-
-function renderPhotos(card, num){
-  const row = card.querySelector('[data-photos]');
-  const ans = currentAudit.answers[num];
-  row.innerHTML = '';
-  (ans.photos||[]).forEach((p, idx)=>{
-    const th = document.createElement('div');
-    th.className = 'photo-thumb';
-    th.innerHTML = `<img src="${p.data}"><div class="rm">✕</div>`;
-    th.querySelector('.rm').addEventListener('click', (e)=>{
-      e.stopPropagation();
-      ans.photos.splice(idx,1);
-      renderPhotos(card, num);
-      updateProgress();
-      scheduleSave();
-    });
-    row.appendChild(th);
-  });
-  const addBtn = document.createElement('div');
-  addBtn.className = 'add-photo-btn';
-  addBtn.textContent = '+';
-  addBtn.addEventListener('click', ()=> openPhotoPicker(num, card));
-  row.appendChild(addBtn);
-}
-
-/* ============================================================
-   PROGRESO
-   ============================================================ */
-function updateProgress(){
-  const total = 76;
-  const answers = Object.values(currentAudit.answers);
-  const answered = answers.filter(a=>a.valoracion).length;
-  const photos = answers.reduce((s,a)=>s+((a.photos||[]).length),0);
-  document.getElementById('progressFill').style.width = Math.round(answered/total*100)+'%';
-  document.getElementById('progressText').textContent = answered+' / '+total+' respondidas';
-  document.getElementById('photoCount').textContent = photos+' fotos';
-}
-
-/* ============================================================
-   GUARDADO
-   ============================================================ */
-function scheduleSave(){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(()=> saveCurrentAudit(false), 700);
-}
-async function saveCurrentAudit(showToast){
-  if(!currentAudit) return;
-  currentAudit.updatedAt = Date.now();
-  await dbPut(currentAudit);
-  if(showToast) toast('Guardado');
-}
-document.getElementById('saveBtn').addEventListener('click', ()=> saveCurrentAudit(true));
-
-/* ============================================================
-   CÁMARA / RECORTE
-   ============================================================ */
-let photoTarget = null; // {num, card}
-let cropState = null;
-
-function openPhotoPicker(num, card){
-  photoTarget = {num, card};
-  // En iOS Safari, un <input capture> lanza directamente la cámara.
-  // Mostramos elección simple mediante confirm-like: usamos un pequeño menú nativo.
-  if(confirm('Pulsa Aceptar para hacer una foto, o Cancelar para elegir de la galería')){
-    document.getElementById('cameraInput').click();
-  }else{
-    document.getElementById('galleryInput').click();
-  }
-}
-document.getElementById('cameraInput').addEventListener('change', handlePickedFile);
-document.getElementById('galleryInput').addEventListener('change', handlePickedFile);
-
-function handlePickedFile(e){
-  const file = e.target.files[0];
-  e.target.value = '';
-  if(!file) return;
-  const img = new Image();
-  const reader = new FileReader();
-  reader.onload = ()=>{
-    img.onload = ()=> openCropModal(img);
-    img.src = reader.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function openCropModal(img){
-  document.getElementById('photoModal').classList.remove('hidden');
-  const canvas = document.getElementById('cropCanvas');
-  const stage = document.getElementById('cropStage');
-  const ctx = canvas.getContext('2d');
-
-  const W = Math.min(stage.clientWidth || 360, 500);
-  const H = Math.round(W * 0.75); // salida 4:3
-  canvas.width = W; canvas.height = H;
-  canvas.style.width = '100%';
-  canvas.style.maxWidth = W+'px';
-
-  const scaleFit = Math.max(W/img.width, H/img.height);
-  cropState = {
-    img, rot:0,
-    scale: scaleFit,
-    baseScale: scaleFit,
-    offX: 0, offY: 0,
-    W, H,
-    dragging:false, lastX:0, lastY:0,
-    pinchDist:0,
-  };
-  drawCrop();
-}
-
-function drawCrop(){
-  const c = cropState;
-  const canvas = document.getElementById('cropCanvas');
-  const ctx = canvas.getContext('2d');
-  ctx.save();
-  ctx.fillStyle = '#111';
-  ctx.fillRect(0,0,c.W,c.H);
-  ctx.translate(c.W/2 + c.offX, c.H/2 + c.offY);
-  ctx.rotate(c.rot * Math.PI/180);
-  ctx.scale(c.scale, c.scale);
-  ctx.drawImage(c.img, -c.img.width/2, -c.img.height/2);
-  ctx.restore();
-}
-
-/* --- interacción: arrastrar y pellizcar --- */
-(function bindCropEvents(){
-  const canvas = document.getElementById('cropCanvas');
-  canvas.addEventListener('touchstart', e=>{
-    if(!cropState) return;
-    if(e.touches.length===1){
-      cropState.dragging = true;
-      cropState.lastX = e.touches[0].clientX;
-      cropState.lastY = e.touches[0].clientY;
-    }else if(e.touches.length===2){
-      cropState.dragging = false;
-      cropState.pinchDist = dist(e.touches[0], e.touches[1]);
-      cropState.pinchScale0 = cropState.scale;
-    }
-  }, {passive:true});
-  canvas.addEventListener('touchmove', e=>{
-    if(!cropState) return;
-    if(e.touches.length===1 && cropState.dragging){
-      const dx = e.touches[0].clientX - cropState.lastX;
-      const dy = e.touches[0].clientY - cropState.lastY;
-      cropState.offX += dx; cropState.offY += dy;
-      cropState.lastX = e.touches[0].clientX;
-      cropState.lastY = e.touches[0].clientY;
-      drawCrop();
-    }else if(e.touches.length===2){
-      const d = dist(e.touches[0], e.touches[1]);
-      const factor = d / (cropState.pinchDist || d);
-      cropState.scale = Math.max(cropState.baseScale*0.5, cropState.pinchScale0 * factor);
-      drawCrop();
-    }
-    e.preventDefault();
-  }, {passive:false});
-  canvas.addEventListener('touchend', e=>{
-    if(!cropState) return;
-    cropState.dragging = false;
-  });
-  // ratón (para pruebas en escritorio)
-  canvas.addEventListener('mousedown', e=>{
-    if(!cropState) return;
-    cropState.dragging = true; cropState.lastX = e.clientX; cropState.lastY = e.clientY;
-  });
-  window.addEventListener('mousemove', e=>{
-    if(!cropState || !cropState.dragging) return;
-    const dx = e.clientX - cropState.lastX, dy = e.clientY - cropState.lastY;
-    cropState.offX += dx; cropState.offY += dy;
-    cropState.lastX = e.clientX; cropState.lastY = e.clientY;
-    drawCrop();
-  });
-  window.addEventListener('mouseup', ()=>{ if(cropState) cropState.dragging=false; });
-  canvas.addEventListener('wheel', e=>{
-    if(!cropState) return;
-    e.preventDefault();
-    cropState.scale = Math.max(cropState.baseScale*0.5, cropState.scale * (e.deltaY<0?1.08:0.92));
-    drawCrop();
-  }, {passive:false});
-  function dist(t1,t2){ return Math.hypot(t1.clientX-t2.clientX, t1.clientY-t2.clientY); }
-})();
-
-document.getElementById('photoRotateBtn').addEventListener('click', ()=>{
-  if(!cropState) return;
-  cropState.rot = (cropState.rot + 90) % 360;
-  drawCrop();
-});
-document.getElementById('photoCancelBtn').addEventListener('click', closeCropModal);
-document.getElementById('photoRetakeBtn').addEventListener('click', ()=>{
-  closeCropModal();
-  openPhotoPicker(photoTarget.num, photoTarget.card);
-});
-document.getElementById('photoUseBtn').addEventListener('click', ()=>{
-  const canvas = document.getElementById('cropCanvas');
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.78);
-  const ans = currentAudit.answers[photoTarget.num];
-  ans.photos = ans.photos || [];
-  ans.photos.push({data:dataUrl, comment:''});
-  renderPhotos(photoTarget.card, photoTarget.num);
-  updateProgress();
-  scheduleSave();
-  closeCropModal();
-});
-function closeCropModal(){
-  document.getElementById('photoModal').classList.add('hidden');
-  cropState = null;
-}
-
-/* ============================================================
-   FINALIZAR / EXPORTAR
-   ============================================================ */
-document.getElementById('finishBtn').addEventListener('click', async ()=>{
-  const answers = Object.values(currentAudit.answers);
-  const answered = answers.filter(a=>a.valoracion).length;
-  if(answered < 76){
-    if(!confirm(`Solo has respondido ${answered} de 76 preguntas. ¿Exportar igualmente?`)) return;
-  }
-  await saveCurrentAudit(false);
-  await exportAudit();
-});
-
-async function exportAudit(){
-  const overlay = document.getElementById('exportOverlay');
-  const status = document.getElementById('exportStatus');
-  overlay.classList.remove('hidden');
-  try{
-    status.textContent = 'Generando Excel…';
-    await sleep(50);
-    const xlsxBlob = await buildExcelBlob();
-
-    status.textContent = 'Generando informe fotográfico…';
-    await sleep(50);
-    const pdfBlob = await buildPdfBlob();
-
-    currentAudit.status = 'finalizado';
-    await saveCurrentAudit(false);
-
-    status.textContent = 'Descargando…';
-    const baseName = sanitizeId(currentAudit.ceco)+'_'+sanitizeId(currentAudit.fecha);
-    downloadBlob(xlsxBlob, 'ENCUESTA_SO_'+baseName+'.xlsx');
-    await sleep(400);
-    downloadBlob(pdfBlob, 'ANEXO_FOTOGRAFICO_'+baseName+'.pdf');
-
-    overlay.classList.add('hidden');
-    toast('Archivos exportados correctamente');
-    renderHome();
-    showScreen('screen-home');
-  }catch(err){
-    console.error(err);
-    overlay.classList.add('hidden');
-    alert('Ha ocurrido un error generando los archivos: '+err.message);
-  }
-}
-function sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
-function downloadBlob(blob, filename){
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click();
-  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-}
-
-/* Escribe valores directamente en el XML interno del .xlsx original,
-   sin recomponer el libro entero. Esto conserva el 100% del formato,
-   colores, bordes y listas desplegables tal como los generó la
-   plataforma de Repsol — solo se tocan las celdas F/G/H de cada
-   pregunta. */
-function xmlEscape(s){
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function setCellInline(xml, cellRef, text){
-  const value = xmlEscape(text);
-  const selfClosing = new RegExp('<c r="'+cellRef+'"([^>]*)/>');
-  const withContent  = new RegExp('<c r="'+cellRef+'"([^>]*)>.*?</c>');
-  if(selfClosing.test(xml)){
-    return xml.replace(selfClosing, (m, attrs)=>{
-      const cleanAttrs = attrs.replace(/\st="[^"]*"/,''); // por si ya tuviera un tipo
-      return '<c r="'+cellRef+'"'+cleanAttrs+' t="inlineStr"><is><t xml:space="preserve">'+value+'</t></is></c>';
-    });
-  }
-  if(withContent.test(xml)){
-    return xml.replace(withContent, (m)=>{
-      const sMatch = m.match(/ s="(\d+)"/);
-      const sAttr = sMatch ? ' s="'+sMatch[1]+'"' : '';
-      return '<c r="'+cellRef+'"'+sAttr+' t="inlineStr"><is><t xml:space="preserve">'+value+'</t></is></c>';
-    });
-  }
-  console.warn('Celda no encontrada en el XML original:', cellRef);
-  return xml;
-}
-
-async function buildExcelBlob(){
-  const zip = await JSZip.loadAsync(currentAudit.originalXlsx);
-  // localizar la hoja activa a partir de workbook.xml (normalmente sheet1.xml)
-  let sheetPath = 'xl/worksheets/sheet1.xml';
-  if(!zip.file(sheetPath)){
-    const candidates = Object.keys(zip.files).filter(p=>/^xl\/worksheets\/sheet\d+\.xml$/.test(p));
-    if(candidates.length) sheetPath = candidates[0];
-  }
-  let xml = await zip.file(sheetPath).async('string');
-
-  QUESTIONS.forEach(q=>{
-    const ans = currentAudit.answers[q.num] || {};
-    const row = q.row;
-    if(ans.valor)      xml = setCellInline(xml, 'F'+row, ans.valor);
-    if(ans.valoracion) xml = setCellInline(xml, 'G'+row, valLabelForExcel(ans.valoracion));
-    if(ans.obs)        xml = setCellInline(xml, 'H'+row, ans.obs);
-  });
-
-  zip.file(sheetPath, xml);
-  const out = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  return out;
-}
-function valLabelForExcel(key){
-  // El desplegable de la plataforma usa: SÍ, NO, N/A, PTE
-  return {SI:'SÍ', NO:'NO', NA:'N/A', PTE:'PTE'}[key] || '';
-}
-
-async function buildPdfBlob(){
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({unit:'pt', format:'a4'});
-  const pageW = doc.internal.pageSize.getWidth();
-  const margin = 40;
-  let y = margin;
-
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(11);
-  const headerRows = [
-    ['D.A.', currentAudit.da || ''],
-    ['CENTRO DE COSTE', currentAudit.ceco || ''],
-    ['NOMBRE E.S.', currentAudit.ceco || ''],
-    ['FECHA', currentAudit.fecha || ''],
-    ['AUDITOR', currentAudit.auditor || ''],
-  ];
-  headerRows.forEach(([k,v])=>{
-    doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.rect(margin, y, 150, 20);
-    doc.rect(margin+150, y, pageW-2*margin-150, 20);
-    doc.text(k, margin+5, y+13);
-    doc.setFont('helvetica','normal');
-    doc.text(String(v), margin+155, y+13);
-    y += 20;
-  });
-  y += 14;
-
-  for(const q of QUESTIONS){
-    const ans = currentAudit.answers[q.num] || {};
-    const valWord = ans.valoracion ? VAL_OPTIONS.find(v=>v.key===ans.valoracion).pdfWord : 'SIN RESPONDER';
-    const photos = ans.photos || [];
-
-    // estimar altura necesaria del bloque
-    const textLines = doc.setFont('helvetica','bold').setFontSize(10).splitTextToSize(q.text, pageW-2*margin-10);
-    let blockH = 22 + (textLines.length*13) + 6;
-    if(ans.obs) blockH += 14;
-    if(photos.length) blockH += 145;
-
-    if(y + blockH > doc.internal.pageSize.getHeight() - margin){
-      doc.addPage(); y = margin;
-    }
-
-    doc.setFont('helvetica','bold'); doc.setFontSize(10);
-    doc.rect(margin, y, pageW-2*margin-90, 20);
-    doc.rect(pageW-margin-90, y, 90, 20);
-    doc.text('PREGUNTA '+q.num, margin+5, y+13);
-    doc.text(valWord, pageW-margin-85, y+13);
-    y += 20;
-
-    doc.setFont('helvetica','bold'); doc.setFontSize(9.5);
-    doc.rect(margin, y, pageW-2*margin, textLines.length*13+8);
-    doc.text(textLines, margin+5, y+12);
-    y += textLines.length*13 + 8;
-
-    if(ans.obs){
-      doc.setFont('helvetica','normal'); doc.setFontSize(9);
-      const obsLines = doc.splitTextToSize('Observaciones: '+ans.obs, pageW-2*margin-10);
-      doc.text(obsLines, margin+5, y+10);
-      y += obsLines.length*11 + 6;
-    }
-    if(ans.valor){
-      doc.setFont('helvetica','normal'); doc.setFontSize(9);
-      doc.text('Valor/Fecha: '+ans.valor, margin+5, y+10);
-      y += 14;
-    }
-
-    if(photos.length){
-      let x = margin;
-      const imgW = Math.min(150, (pageW-2*margin-10*(photos.length-1))/Math.min(photos.length,3));
-      const imgH = imgW*0.75;
-      photos.forEach((p, i)=>{
-        if(i>0 && i%3===0){ y += imgH+8; x = margin; }
-        if(y + imgH > doc.internal.pageSize.getHeight()-margin){ doc.addPage(); y=margin; x=margin; }
-        try{ doc.addImage(p.data, 'JPEG', x, y, imgW, imgH); }catch(e){}
-        x += imgW+10;
-      });
-      y += imgH + 10;
-    }
-    y += 8;
-  }
-
-  return doc.output('blob');
-}
-
-/* ============================================================
-   ARRANQUE
-   ============================================================ */
-function checkLibsLoaded(){
-  const missing = [];
-  if(typeof XLSX === 'undefined') missing.push('xlsx.full.min.js');
-  if(typeof JSZip === 'undefined') missing.push('jszip.min.js');
-  if(typeof window.jspdf === 'undefined') missing.push('jspdf.umd.min.js');
-  return missing;
-}
-
-(async function init(){
-  const missingLibs = checkLibsLoaded();
-  if(missingLibs.length){
-    alert(
-      'La app no ha podido cargar estos archivos:\n\n' +
-      missingLibs.join('\n') +
-      '\n\nEsto casi siempre significa que esos archivos .js no se subieron a GitHub, o se subieron con otro nombre. ' +
-      'Revisa en tu repositorio que estén sueltos en la raíz, junto a index.html.'
-    );
-    return; // no seguimos inicializando si faltan librerías
-  }
-  db = await openDB();
-  if('serviceWorker' in navigator){
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
-  }
-  renderHome();
-  showScreen('screen-home');
+  try{ db=await openDB(); }catch(e){ alert('No se puede usar el almacenamiento del navegador: '+e); return; }
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  await renderHome(); showScreen('home');
 })();
