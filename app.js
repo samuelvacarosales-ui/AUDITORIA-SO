@@ -21,7 +21,7 @@ const dbDel = id => new Promise((res,rej)=>{ const tx=db.transaction('audits','r
 function getSettings(){
   let s = {};
   try{ s = JSON.parse(localStorage.getItem('anexoSO_settings'))||{}; }catch(e){}
-  return {auditor: s.auditor || 'SAMUEL VACA', da: (s.da!==undefined ? s.da : 'NORESTE')};
+  return {auditor: s.auditor || 'SAMUEL VACA'};
 }
 function toast(msg, ms){
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
@@ -61,10 +61,10 @@ $('backBtn').onclick = async ()=>{
   showScreen('home');
 };
 $('settingsBtn').onclick = ()=>{
-  const s=getSettings(); $('setAuditor').value=s.auditor; $('setDA').value=s.da; showScreen('settings');
+  const s=getSettings(); $('setAuditor').value=s.auditor; showScreen('settings');
 };
 $('saveSet').onclick = ()=>{
-  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA', da:$('setDA').value.trim()}));
+  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA'}));
   toast('Ajustes guardados'); showScreen('home');
 };
 
@@ -84,7 +84,7 @@ function auditCard(a){
   d.innerHTML = '<div class="info"><div class="nm">'+esc(a.name)+' · '+esc(a.ceco)+'</div>'+
     '<div class="meta">'+esc(a.fecha)+' · '+st.photos+' fotos</div>'+
     '<div class="meta"><span class="pill" style="background:var(--bad)">'+st.NO+' no conformes</span>'+
-    (st.NO? '<span class="pill" style="background:'+(st.ncSinFoto?'var(--pte)':'var(--ok)')+'">'+(st.ncSinFoto? st.ncSinFoto+' sin foto':'todas con foto')+'</span>':'')+'</div></div>'+
+    (st.NO? '<span class="pill" style="background:'+(st.ncSinFoto?'var(--warn)':'var(--ok)')+'">'+(st.ncSinFoto? st.ncSinFoto+' sin foto':'todas con foto')+'</span>':'')+'</div></div>'+
     '<div class="del">🗑</div>';
   d.querySelector('.info').onclick = ()=>openAudit(a);
   d.querySelector('.del').onclick = async ev=>{
@@ -136,10 +136,8 @@ function renderHeaderCard(){
    '<div class="fld"><label>Centro de coste</label><div class="ro">'+esc(a.ceco)+'</div></div>'+
    '<div class="fld"><label>Fecha</label><div class="ro">'+esc(a.fecha)+'</div></div>'+
    '<div class="fld full"><label>Nombre E.S.</label><div class="ro">'+esc(a.name)+'</div></div>'+
-   '<div class="fld"><label>D.A.</label><input id="fDA" value="'+esc(a.da||'')+'"></div>'+
-   '<div class="fld"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
+   '<div class="fld full"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
    '<label class="linkbtn" for="fileReload">↻ Actualizar desde un Excel nuevo</label>';
-  $('fDA').oninput = e=>{ cur.da=e.target.value; scheduleSave(); };
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
 }
 function renderStats(){
@@ -196,10 +194,7 @@ function questionCard(q){
   el.innerHTML =
     '<div class="q-head"><span class="q-num">PREGUNTA '+q.num+'</span><span class="q-badge">'+STATUS[q.status].word+'</span></div>'+
     '<div class="q-text">'+esc(q.text)+'</div>'+
-    '<textarea rows="2" placeholder="Comentario para el informe (opcional)"></textarea>'+
     '<div class="photos"></div>';
-  const ta=el.querySelector('textarea'); ta.value=commentFor(cur,q);
-  ta.oninput=()=>{ cur.comments[q.num]=ta.value; scheduleSave(); };
   fillPhotos(el.querySelector('.photos'), q.num);
   return el;
 }
@@ -214,7 +209,7 @@ function fillPhotos(row, num){
   row.innerHTML='';
   (cur.photos[num]||[]).forEach((p,i)=>{
     const t=document.createElement('div'); t.className='th';
-    t.innerHTML='<img src="'+(p.thumb||p.data)+'"><div class="sz">'+(p.size||'M')+'</div>';
+    t.innerHTML='<img src="'+(p.thumb||p.data)+'"><div class="sz">'+(p.size||'L')+'</div>';
     t.onclick=()=>editPhoto(num,i);
     row.appendChild(t);
   });
@@ -250,7 +245,7 @@ $('filePhoto').onchange = async e=>{
       const orig=scaledDataURL(img,1600,0.85);
       URL.revokeObjectURL(url);
       unbusy();
-      const res=await openEditor({orig, size:'M', canDelete:false, title:files.length>1?('Foto '+(i+1)+' de '+files.length):'Ajustar foto'});
+      const res=await openEditor({orig, size:'L', canDelete:false, title:files.length>1?('Foto '+(i+1)+' de '+files.length):'Ajustar foto'});
       if(!res || res.deleted) break;
       (cur.photos[num]=cur.photos[num]||[]).push({orig, data:res.data, thumb:res.thumb, w:res.w, h:res.h, size:res.size, edit:res.edit});
       await saveNow(); refreshCard(num);
@@ -374,7 +369,7 @@ function edClose(result){
 async function openEditor(opts){
   const img=await loadImage(opts.orig);
   return new Promise(async resolve=>{
-    ED.resolve=resolve; ED.img=img; ED.size=opts.size||'M'; ED.rot=opts.edit?opts.edit.rot:0;
+    ED.resolve=resolve; ED.img=img; ED.size=opts.size||'L'; ED.rot=opts.edit?opts.edit.rot:0;
     $('edTitle').textContent=opts.title||'Ajustar foto';
     $('edDel').classList.toggle('hidden',!opts.canDelete);
     edSizeUI();

@@ -14,7 +14,7 @@
 <style>
 :root{
   --orange:#f2711c; --red:#e6402a; --dark:#1e2430; --bg:#f4f5f7; --card:#fff;
-  --ok:#008c3c; --bad:#dc0000; --na:#000; --pte:#c87800; --none:#787878;
+  --ok:#008c3c; --bad:#dc0000; --na:#000; --pte:#000; --warn:#c87800; --none:#787878;
   --border:#e2e5ea; --text:#1e2430; --soft:#6b7280;
   --sb: env(safe-area-inset-bottom,0px); --st: env(safe-area-inset-top,0px);
 }
@@ -76,7 +76,6 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .q-badge{font-size:12px;font-weight:800;}
 .s-SI .q-badge{color:var(--ok);} .s-NO .q-badge{color:var(--bad);} .s-NA .q-badge{color:var(--na);} .s-PTE .q-badge{color:var(--pte);} .s-none .q-badge{color:var(--none);}
 .q-text{font-size:14px;font-weight:700;line-height:1.35;color:#c96a00;margin-bottom:8px;}
-.q textarea{width:100%;border:1px solid var(--border);border-radius:9px;padding:8px 10px;font-size:13.5px;background:#fbfbfc;color:var(--text);resize:vertical;font-family:inherit;margin-bottom:8px;}
 .photos{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
 .th{position:relative;width:64px;height:64px;border-radius:10px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;}
 .th img{width:100%;height:100%;object-fit:cover;display:block;}
@@ -98,13 +97,12 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .pv-hdr th,.pv-hdr td,.pv-q th,.pv-q td{border:1px solid #000;padding:4px 6px;text-align:left;vertical-align:top;font-size:11px;}
 .pv-hdr th{width:30%;}
 .pv-q{margin-top:14px;} .pv-q .pv-l{width:30%;}
-.pv-text{color:#f7941d;font-weight:800;}
+.pv-text{color:#f7941d;font-weight:800;overflow-wrap:anywhere;font-size:10px !important;}
 .pv-cartel-title{text-align:center;font-weight:800;margin:14px 0 8px;}
 .pv-cartel{text-align:center;} .pv-cartel img{max-width:100%;margin-bottom:6px;}
-.pv-body{display:flex;gap:8px;margin-top:6px;}
-.pv-com{width:30%;font-size:10px;word-break:break-word;}
-.pv-ph{width:70%;display:flex;flex-wrap:wrap;gap:6px;align-items:flex-start;}
-.pv-ph img{max-width:100%;height:auto;}
+.pv-ph{text-align:center;padding:6px !important;}
+.pv-ph img{display:inline-block;margin:3px;vertical-align:top;height:auto;}
+.pv-cartel img{display:inline-block;margin:3px;height:auto;}
 .pv-note{font-size:12px;color:var(--soft);padding:0 14px 6px;}
 
 /* editor de fotos */
@@ -167,7 +165,6 @@ input[type=file]{display:none;}
   <div class="screen hidden" id="s-settings">
     <div class="hcard"><div class="hgrid">
       <div class="fld full"><label>Nombre del auditor</label><input id="setAuditor" type="text"></div>
-      <div class="fld full"><label>D.A. por defecto</label><input id="setDA" type="text" placeholder="NORESTE"></div>
     </div></div>
     <div class="pad"><button class="btn btn-p" id="saveSet" style="width:100%">Guardar ajustes</button></div>
   </div>
