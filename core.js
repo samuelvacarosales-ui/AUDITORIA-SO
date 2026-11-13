@@ -116,6 +116,10 @@ function fmtPct(p){
   for(const d of [2,1,0]){ const t=p.toFixed(d).replace('.',',')+'%'; if(t.length<=10) return t; }
   return '%';
 }
+function invBlank(q){
+  const v=String(q.valor||'').trim(), o=String(q.obs||'').trim();
+  return (!v || v==='%') && (!o || /^AJUSTE\s*F[IÍ]SICO/i.test(o));
+}
 function recalcInv(q){
   const aj=parseNum(q.ajuste), ve=parseNum(q.ventas);
   q.valor = (isFinite(aj)&&isFinite(ve)&&ve!==0) ? fmtPct(aj*100/ve) : '%';
@@ -126,14 +130,14 @@ function recalcInv(q){
 function migrateInv(questions){
   let ch=false;
   questions.forEach(q=>{
-    if(INV_Q[q.num] && !q.inv && !q.valor && !q.obs && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); ch=true; }
+    if(INV_Q[q.num] && !q.inv && invBlank(q) && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); ch=true; }
   });
   return ch;
 }
 function applyDefaults(questions){
   const warn = [];
   questions.forEach(q=>{
-    if(INV_Q[q.num] && !q.inv && !q.valor && !q.obs && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); }
+    if(INV_Q[q.num] && !q.inv && invBlank(q) && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); }
     if(q.status) return;                              // lo que ya traiga rellenado el Excel se respeta
     const r = DEFAULT_NA[q.num];
     if(r){

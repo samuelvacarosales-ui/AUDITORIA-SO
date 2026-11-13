@@ -25,3 +25,4 @@ Usa el MISMO repositorio que ya tienes. Son 10 archivos, todos sueltos.
 - Por defecto: pregunta 13 → N/A "RECAUDACIÓN CON TABLET"; 37 → N/A "NO DISPONE"; 53 → N/A "NO APLICA".
 - Interruptor **"Esta estación NO dispone de servicios"**: preguntas 6, 8, 56, 65 y 71 → N/A + "NO DISPONE". Al apagarlo vuelven a SÍ (si no las has cambiado a mano).
 - Para que el móvil coja la versión nueva, sube de nuevo index.html, app.js, core.js, sw.js, manifest.json y LEEME.md.
+- Preguntas 14–17 (inventarios): escribes Ajuste físico (€) y Ventas (€); la app calcula Valor = ajuste × 100 / ventas (con % y signo) y pone en observaciones "AJUSTE FISICO: x € VENTAS: y €". Sin importes queda "%" y "AJUSTE FISICO: € VENTAS: €".

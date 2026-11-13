@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v9';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
