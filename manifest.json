@@ -1,6 +1,6 @@
 {
-  "name": "Anexo SO Repsol",
-  "short_name": "Anexo SO",
+  "name": "Encuesta SO Repsol",
+  "short_name": "Encuesta SO",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

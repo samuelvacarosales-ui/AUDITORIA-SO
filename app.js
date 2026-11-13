@@ -1,5 +1,5 @@
 /* ============================================================
-   app.js — interfaz de la app "Anexo SO"
+   app.js — interfaz de la app "Encuesta SO"
    ============================================================ */
 const $ = id => document.getElementById(id);
 let db = null, cur = null, screen = 'home', filter = 'all', saveTimer = null, pdfBlob = null;
@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Anexo SO', s='Repsol · Anexo fotográfico';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -73,7 +73,7 @@ async function renderHome(){
   const all = (await dbAll()).sort((a,b)=>b.updatedAt-a.updatedAt);
   const on=$('ongoing'), fin=$('finished'); on.innerHTML=''; fin.innerHTML='';
   const ongoing = all.filter(a=>a.status!=='finalizado'), done = all.filter(a=>a.status==='finalizado');
-  if(!ongoing.length) on.innerHTML='<div class="empty">No tienes informes en curso.<br>Carga el Excel rellenado de una estación para empezar.</div>';
+  if(!ongoing.length) on.innerHTML='<div class="empty">No tienes encuestas en curso.<br>Carga el Excel limpio de una estación para empezar.</div>';
   ongoing.forEach(a=>on.appendChild(auditCard(a)));
   $('finTitle').classList.toggle('hidden', !done.length);
   done.forEach(a=>fin.appendChild(auditCard(a)));
@@ -105,16 +105,17 @@ async function handleExcel(file){
     const existing = (await dbAll()).find(a=>a.id===id);
     unbusy();
     if(existing){
-      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos y lo que hayas rellenado en la app.')) return;
+      if(!confirm('Ya tienes una encuesta de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos y lo que hayas rellenado en la app.')) return;
       cur = mergeAudit(existing, parsed, file.name, buf);
     }else{
       cur = newAudit(parsed, file.name, getSettings(), buf);
     }
+    const warn = applyDefaults(cur.questions);
     await saveNow();
     filter='all';
     renderAudit(); showScreen('audit');
-    const sin = cur.questions.filter(q=>!q.status).length;
-    toast(sin ? ('Excel leído. ⚠ '+sin+' preguntas sin valoración en el Excel') : ('Excel leído: '+cur.questions.length+' preguntas'), 3200);
+    toast(warn.length ? ('⚠ Las preguntas '+warn.join(', ')+' ya no coinciden con las reglas por defecto: revísalas')
+                      : 'Excel cargado: todo en SÍ, salvo N/A por defecto en 13, 37 y 53', 4200);
   }catch(err){
     unbusy(); console.error(err);
     alert('No se ha podido leer este Excel.\n\n'+(err&&err.message?err.message:err));
@@ -137,9 +138,18 @@ function renderHeaderCard(){
    '<div class="fld"><label>Fecha</label><div class="ro">'+esc(a.fecha)+'</div></div>'+
    '<div class="fld full"><label>Nombre E.S.</label><div class="ro">'+esc(a.name)+'</div></div>'+
    '<div class="fld full"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
+   '<label class="swrow"><span class="swtxt"><b>Esta estación NO dispone de servicios</b><small>Pone N/A + «NO DISPONE» en las preguntas 6, 8, 56, 65 y 71</small></span>'+
+   '<span class="sw"><input type="checkbox" id="sinServ"><i></i></span></label>'+
    (nb? '' : '<div class="hint">Elige de una vez las fotos de esta estación y luego solo las marcas en cada pregunta.</div>')+
    '<div class="hbtns"><div class="linkbtn'+(nb?'':' main')+'" id="bankBtn">📷 Fotos de la estación ('+nb+')</div>'+
-   '<label class="linkbtn" for="fileReload">↻ Excel nuevo</label></div>';
+   '<label class="linkbtn" for="fileReload">↻ Recargar Excel</label></div>';
+  $('sinServ').checked = !!a.sinServicios;
+  $('sinServ').onchange = e=>{
+    const on = e.target.checked, warn = setSinServicios(cur, on);
+    renderList(); refreshTop(); scheduleSave();
+    toast(warn.length ? ('⚠ Las preguntas '+warn.join(', ')+' no coinciden con la plantilla y no se han tocado')
+         : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
+  };
   $('bankBtn').onclick = ()=>openBank('manage');
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
 }

@@ -1,4 +1,4 @@
-# Anexo SO — cómo actualizar tu GitHub
+# Encuesta SO — cómo actualizar tu GitHub
 
 Usa el MISMO repositorio que ya tienes. Son 10 archivos, todos sueltos.
 (jszip.min.js es nuevo: vuelve a estar porque ahora la app exporta el Excel.)
@@ -18,3 +18,10 @@ Usa el MISMO repositorio que ya tienes. Son 10 archivos, todos sueltos.
 5. «Guardar Excel»: sale el MISMO archivo de Repsol, con solo esas tres columnas rellenadas.
 6. «Vista previa y PDF» → «Guardar PDF».
 7. Subes a la plataforma el Excel y el PDF.
+
+## Novedades (versión Encuesta SO)
+
+- Al cargar el Excel limpio, todas las preguntas pasan a **SÍ** (verde).
+- Por defecto: pregunta 13 → N/A "RECAUDACIÓN CON TABLET"; 37 → N/A "NO DISPONE"; 53 → N/A "NO APLICA".
+- Interruptor **"Esta estación NO dispone de servicios"**: preguntas 6, 8, 56, 65 y 71 → N/A + "NO DISPONE". Al apagarlo vuelven a SÍ (si no las has cambiado a mano).
+- Para que el móvil coja la versión nueva, sube de nuevo index.html, app.js, core.js, sw.js, manifest.json y LEEME.md.

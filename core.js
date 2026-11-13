@@ -82,6 +82,50 @@ function parseWorkbook(buf){
   return {meta, questions};
 }
 
+
+/* ============================================================
+   VALORES POR DEFECTO AL CARGAR EL EXCEL LIMPIO
+   - Toda pregunta sin valorar pasa a SÍ (verde).
+   - 13, 37 y 53 pasan a N/A con su observación.
+   - Interruptor «no dispone de servicios»: 6, 8, 56, 65 y 71 → N/A + NO DISPONE.
+   Cada regla se comprueba también por el texto de la pregunta: si Repsol cambiara la
+   numeración, la regla no se aplica y la app avisa en vez de marcar la pregunta equivocada.
+   ============================================================ */
+const DEFAULT_NA = {
+  13: {kw:'RECAUDACION DE TABACO', obs:'RECAUDACIÓN CON TABLET'},
+  37: {kw:'SOTANO',                obs:'NO DISPONE'},
+  53: {kw:'LEGIONELLA',            obs:'NO APLICA'},
+};
+const SERVICE_Q = {6:'CONTADORES', 8:'COMPRESOR', 56:'SERVICIOS COMPLEMENTARIOS', 65:'SERVICIOS COMPLEMENTARIOS', 71:'SERVICIOS COMPLEMENTARIOS'};
+const SERVICE_OBS = 'NO DISPONE';
+function normTxt(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
+function ruleMatches(q, kw){ return normTxt(q.text).includes(kw); }
+/* Devuelve la lista de preguntas cuya regla no coincide con su texto */
+function applyDefaults(questions){
+  const warn = [];
+  questions.forEach(q=>{
+    if(q.status) return;                              // lo que ya traiga rellenado el Excel se respeta
+    const r = DEFAULT_NA[q.num];
+    if(r){
+      if(ruleMatches(q, r.kw)){ q.status='NA'; if(!q.obs) q.obs=r.obs; return; }
+      warn.push(q.num);
+    }
+    q.status = 'SI';
+  });
+  return warn;
+}
+function setSinServicios(audit, on){
+  const warn = [];
+  Object.keys(SERVICE_Q).forEach(n=>{
+    const q = audit.questions.find(x=>String(x.num)===n);
+    if(!q || !ruleMatches(q, SERVICE_Q[n])){ warn.push(+n); return; }
+    if(on){ q.status='NA'; q.obs=SERVICE_OBS; }
+    else if(q.status==='NA' && q.obs===SERVICE_OBS){ q.status='SI'; q.obs=''; }   // solo si no la has cambiado a mano
+  });
+  audit.sinServicios = !!on;
+  return warn;
+}
+
 function sanitizeId(s){ return String(s||'').replace(/[^a-zA-Z0-9]/g,'_'); }
 
 function newAudit(parsed, fileName, settings, buf){
@@ -94,6 +138,7 @@ function newAudit(parsed, fileName, settings, buf){
     fileName, originalXlsx: buf,   // Excel original, intacto, para exportarlo al final
     questions: parsed.questions,
     photos: {},        // {'0': cartel, '1'..'76': fotos de cada pregunta}
+    sinServicios: false,
     status: 'en_curso',
     createdAt: Date.now(), updatedAt: Date.now(),
   };
