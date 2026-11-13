@@ -105,7 +105,7 @@ async function handleExcel(file){
     const existing = (await dbAll()).find(a=>a.id===id);
     unbusy();
     if(existing){
-      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos y comentarios.')) return;
+      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos.')) return;
       cur = mergeAudit(existing, parsed, file.name);
     }else{
       cur = newAudit(parsed, file.name, getSettings());
@@ -130,14 +130,17 @@ function renderAudit(){
   renderHeaderCard(); renderStats(); renderFilters(); renderList();
 }
 function renderHeaderCard(){
-  const a=cur;
+  const a=cur, nb=bank().length;
   $('hcard').innerHTML =
    '<div class="hgrid">'+
    '<div class="fld"><label>Centro de coste</label><div class="ro">'+esc(a.ceco)+'</div></div>'+
    '<div class="fld"><label>Fecha</label><div class="ro">'+esc(a.fecha)+'</div></div>'+
    '<div class="fld full"><label>Nombre E.S.</label><div class="ro">'+esc(a.name)+'</div></div>'+
    '<div class="fld full"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
-   '<label class="linkbtn" for="fileReload">↻ Actualizar desde un Excel nuevo</label>';
+   (nb? '' : '<div class="hint">Elige de una vez las fotos de esta estación y luego solo las marcas en cada pregunta.</div>')+
+   '<div class="hbtns"><div class="linkbtn'+(nb?'':' main')+'" id="bankBtn">📷 Fotos de la estación ('+nb+')</div>'+
+   '<label class="linkbtn" for="fileReload">↻ Excel nuevo</label></div>';
+  $('bankBtn').onclick = ()=>openBank('manage');
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
 }
 function renderStats(){
@@ -214,7 +217,7 @@ function fillPhotos(row, num){
     row.appendChild(t);
   });
   const add=document.createElement('div'); add.className='add'; add.textContent='+';
-  add.onclick=()=>{ photoTarget=num; $('filePhoto').click(); };
+  add.onclick=()=>{ photoTarget=num; if(bank().length) openAddSheet(num); else $('filePhoto').click(); };
   row.appendChild(add);
 }
 function refreshCard(num){
@@ -254,12 +257,107 @@ $('filePhoto').onchange = async e=>{
 };
 async function editPhoto(num,i){
   const p=cur.photos[num][i]; if(!p) return;
-  const res=await openEditor({orig:p.orig, edit:p.edit, size:p.size, canDelete:true, title:'Editar foto'});
+  const res=await openEditor({orig:p.orig||p.data, edit:p.edit, size:p.size, canDelete:true, title:'Editar foto'});
   if(!res) return;
   if(res.deleted) cur.photos[num].splice(i,1);
-  else Object.assign(p,{data:res.data,thumb:res.thumb,w:res.w,h:res.h,size:res.size,edit:res.edit});
+  else{ if(!p.orig) p.orig=p.data; Object.assign(p,{data:res.data,thumb:res.thumb,w:res.w,h:res.h,size:res.size,edit:res.edit}); }
   await saveNow(); refreshCard(num);
 }
+
+
+/* ---------------- fotos guardadas de la estación ---------------- */
+let bankMode='manage', bankSel=[], bankTarget=null;
+function bank(){ return cur.bank = cur.bank || []; }
+function bankUsedSet(){
+  const s=new Set();
+  Object.values(cur.photos).forEach(arr=>(arr||[]).forEach(p=>{ if(p.bankId) s.add(p.bankId); }));
+  return s;
+}
+$('fileBank').onchange = async e=>{
+  const files=[...e.target.files]; e.target.value='';
+  if(!files.length || !cur) return;
+  let ok=0;
+  for(let i=0;i<files.length;i++){
+    try{
+      busy('Guardando foto '+(i+1)+' de '+files.length+'…');
+      await nextFrame();
+      const url=URL.createObjectURL(files[i]);
+      const img=await loadImage(url);
+      const data=scaledDataURL(img,1600,0.85), thumb=scaledDataURL(img,260,0.7);
+      const w=img.naturalWidth, h=img.naturalHeight, s=Math.min(1,1600/Math.max(w,h));
+      URL.revokeObjectURL(url);
+      bank().push({id:'b'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), data, thumb, w:Math.round(w*s), h:Math.round(h*s)});
+      ok++;
+      if(ok%4===0) await saveNow();
+    }catch(err){ console.error(err); }
+  }
+  unbusy();
+  await saveNow();
+  if(ok<files.length) toast('⚠ '+(files.length-ok)+' foto(s) no se pudieron leer', 3500);
+  else toast(ok+' foto'+(ok>1?'s':'')+' guardada'+(ok>1?'s':'')+' en la estación');
+  renderHeaderCard();
+  if(!$('bankModal').classList.contains('hidden')) renderBank();
+};
+function openBank(mode, target){
+  bankMode=mode; bankTarget=target; bankSel=[];
+  $('bankModal').classList.remove('hidden');
+  renderBank();
+}
+function closeBank(){ $('bankModal').classList.add('hidden'); renderHeaderCard(); }
+function renderBank(){
+  const list=bank(), used=bankUsedSet(), grid=$('bankGrid');
+  $('bankTitle').textContent = bankMode==='pick' ? 'Elegir fotos' : 'Fotos de la estación ('+list.length+')';
+  grid.innerHTML='';
+  if(!list.length){
+    grid.innerHTML='<div class="bank-empty">Aún no hay fotos guardadas.<br><br>Pulsa <b>«Añadir fotos»</b> y marca de una vez todas las de esta estación en tu fototeca.</div>';
+  }
+  list.forEach(b=>{
+    const el=document.createElement('div'); el.className='bk';
+    const idx=bankSel.indexOf(b.id);
+    if(idx>=0) el.classList.add('sel');
+    el.innerHTML='<img src="'+b.thumb+'">'+
+      (used.has(b.id)?'<div class="bk-used">en uso</div>':'')+
+      (bankMode==='pick' ? (idx>=0?'<div class="bk-n">'+(idx+1)+'</div>':'<div class="bk-n off"></div>') : '<div class="bk-x">✕</div>');
+    el.onclick=ev=>{
+      if(bankMode==='pick'){
+        const k=bankSel.indexOf(b.id);
+        if(k>=0) bankSel.splice(k,1); else bankSel.push(b.id);
+        renderBank();
+      }else if(ev.target.classList.contains('bk-x')){
+        if(confirm('¿Quitar esta foto de la estación?\nLas que ya hayas puesto en preguntas se mantienen.')){
+          cur.bank=bank().filter(x=>x.id!==b.id); saveNow(); renderBank();
+        }
+      }
+    };
+    grid.appendChild(el);
+  });
+  const use=$('bankUse');
+  use.classList.toggle('hidden', bankMode!=='pick');
+  use.disabled = !bankSel.length;
+  use.textContent = bankSel.length ? 'Usar '+bankSel.length+' foto'+(bankSel.length>1?'s':'') : 'Elige fotos';
+}
+$('bankClose').onclick = closeBank;
+$('bankUse').onclick = async ()=>{
+  const num=bankTarget; if(num===null||num===undefined||!bankSel.length) return;
+  const arr = cur.photos[num] = cur.photos[num] || [];
+  bankSel.forEach(id=>{
+    const b=bank().find(x=>x.id===id); if(!b) return;
+    arr.push({bankId:b.id, data:b.data, thumb:b.thumb, w:b.w, h:b.h, size:'L', edit:null});
+  });
+  const n=bankSel.length;
+  $('bankModal').classList.add('hidden');
+  await saveNow(); refreshCard(num); renderHeaderCard();
+  toast(n+' foto'+(n>1?'s':'')+' añadida'+(n>1?'s':'')+' · toca una foto para recortarla o cambiar su tamaño', 3200);
+};
+/* hoja "+" de cada pregunta */
+function openAddSheet(num){
+  $('sheetBankN').textContent = bank().length;
+  $('addSheet').classList.remove('hidden');
+}
+$('sheetBank').onclick = ()=>{ $('addSheet').classList.add('hidden'); openBank('pick', photoTarget); };
+$('sheetNew').onclick = ()=>{ $('filePhoto').click(); $('addSheet').classList.add('hidden'); };
+$('sheetCancel').onclick = ()=>$('addSheet').classList.add('hidden');
+$('addSheet').onclick = e=>{ if(e.target.id==='addSheet') $('addSheet').classList.add('hidden'); };
 
 /* ---------------- editor de foto (recorte libre, rotar, tamaño) ---------------- */
 const ED = {rc:null, drag:null};
@@ -440,6 +538,7 @@ function missingLibs(){
     return;
   }
   try{ db=await openDB(); }catch(e){ alert('No se puede usar el almacenamiento del navegador: '+e); return; }
+  if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
   await renderHome(); showScreen('home');
 })();
