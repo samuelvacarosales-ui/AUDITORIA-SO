@@ -12,7 +12,7 @@ const STATUS = {
 };
 const ORANGE = [247,148,29];
 const SIZE_FRAC = {S:0.48, M:0.72, L:1};
-const DEF_SIZE = 'L';
+const DEF_SIZE = 'M';
 
 function normStatus(v){
   if(v===null || v===undefined) return '';
@@ -69,6 +69,8 @@ function parseWorkbook(buf){
         valor: cellText(ws,'F'+r),
         obs: cellText(ws,'H'+r),
       });
+      const qq = questions[questions.length-1];
+      qq.orig = {status:qq.status, valor:qq.valor, obs:qq.obs};   // lo que traía el Excel
     }
   }
   if(!questions.length){
@@ -82,14 +84,14 @@ function parseWorkbook(buf){
 
 function sanitizeId(s){ return String(s||'').replace(/[^a-zA-Z0-9]/g,'_'); }
 
-function newAudit(parsed, fileName, settings){
+function newAudit(parsed, fileName, settings, buf){
   const m = parsed.meta;
   return {
     id: sanitizeId(m.ceco)+'_'+sanitizeId(m.fecha),
     ceco: m.ceco, name: m.name, cPN: m.cPN, zona: m.zona, fecha: m.fecha,
     da: '',
     auditor: (settings && settings.auditor) || 'SAMUEL VACA',
-    fileName,
+    fileName, originalXlsx: buf,   // Excel original, intacto, para exportarlo al final
     questions: parsed.questions,
     photos: {},        // {'0': cartel, '1'..'76': fotos de cada pregunta}
     status: 'en_curso',
@@ -98,12 +100,20 @@ function newAudit(parsed, fileName, settings){
 }
 
 /* Actualiza respuestas desde un Excel nuevo conservando fotos y comentarios */
-function mergeAudit(audit, parsed, fileName){
+function mergeAudit(audit, parsed, fileName, buf){
   const m = parsed.meta;
+  const oldByNum = {};
+  (audit.questions||[]).forEach(q=>{ oldByNum[q.num]=q; });
+  parsed.questions.forEach(nq=>{
+    const o = oldByNum[nq.num];
+    if(o && o.orig && (o.status!==o.orig.status || o.valor!==o.orig.valor || o.obs!==o.orig.obs)){
+      nq.status=o.status; nq.valor=o.valor; nq.obs=o.obs;     // lo que rellenaste en la app tiene prioridad
+    }
+  });
   audit.ceco = m.ceco; audit.name = m.name; audit.cPN = m.cPN;
   audit.zona = m.zona; audit.fecha = m.fecha;
   audit.questions = parsed.questions;
-  audit.fileName = fileName;
+  audit.fileName = fileName; audit.originalXlsx = buf;
   audit.updatedAt = Date.now();
   return audit;
 }
@@ -268,3 +278,124 @@ function buildPdfBlob(a){
 
   return doc.output('blob');
 }
+
+
+/* ============================================================
+   EXPORTAR EL EXCEL ORIGINAL TOCANDO SOLO F (valor), G (valoración) y H (observaciones)
+   - No se regenera el libro: se edita el XML de esas celdas dentro del archivo original.
+   - Las valoraciones reutilizan las mismas cadenas compartidas que la lista desplegable (K1:K4),
+     igual que hace Excel; los textos nuevos se añaden al final de sharedStrings.
+   - Funciona tanto con el XML de Repsol (etiquetas con prefijo x:) como con el guardado por Excel.
+   ============================================================ */
+const XL_LABEL = {SI:'SÍ', NO:'NO', NA:'N/A', PTE:'PTE'};
+function xmlEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function xmlUnesc(s){
+  return String(s).replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'")
+    .replace(/&#x([0-9a-f]+);/gi,(m,n)=>String.fromCharCode(parseInt(n,16)))
+    .replace(/&#(\d+);/g,(m,n)=>String.fromCharCode(+n)).replace(/&amp;/g,'&');
+}
+function cleanText(s, max){
+  let t = String(s===undefined||s===null?'':s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/[\r\n\t]+/g,' ').trim();
+  return t.length>max ? t.slice(0,max) : t;
+}
+function colNum(letters){ let n=0; for(const ch of letters) n=n*26+(ch.charCodeAt(0)-64); return n; }
+function detectPrefix(xml, tag){
+  const m = xml.match(new RegExp('<(?:([A-Za-z_][\\w.-]*):)?'+tag+'[\\s>/]'));
+  if(!m) throw new Error('No encuentro <'+tag+'> en el Excel.');
+  return m[1] ? m[1]+':' : '';
+}
+function parseSst(xml){
+  const sp = detectPrefix(xml,'sst');
+  const re = new RegExp('<'+sp+'si\\b[^>]*?(?:/>|>([\\s\\S]*?)</'+sp+'si>)','g');
+  const tre = new RegExp('<'+sp+'t\\b[^>]*>([\\s\\S]*?)</'+sp+'t>','g');
+  const map = new Map(); let n = 0, m;
+  while((m = re.exec(xml))){
+    let text = '';
+    if(m[1]) for(const t of m[1].matchAll(tre)) text += xmlUnesc(t[1]);
+    if(!map.has(text)) map.set(text, n);
+    n++;
+  }
+  return {sp, map, n};
+}
+function setCellString(sheet, sp, ref, idx, stat){
+  const rowNum = ref.replace(/^[A-Z]+/,'');
+  const rowRe = new RegExp('<'+sp+'row r="'+rowNum+'"[^>]*[^/]>[\\s\\S]*?</'+sp+'row>');
+  const rm = sheet.match(rowRe);
+  if(!rm) throw new Error('No encuentro la fila '+rowNum+' del Excel.');
+  let row = rm[0];
+  const cellRe = new RegExp('<'+sp+'c r="'+ref+'"([^>]*?)\\s*(?:/>|>([\\s\\S]*?)</'+sp+'c>)');
+  const cm = row.match(cellRe);
+  const selfClose = sp ? ' />' : '/>';
+  const mk = (sAttr)=> idx===null
+      ? '<'+sp+'c r="'+ref+'"'+sAttr+selfClose
+      : '<'+sp+'c r="'+ref+'"'+sAttr+' t="s"><'+sp+'v>'+idx+'</'+sp+'v></'+sp+'c>';
+  if(cm){
+    const attrs = cm[1]||'';
+    const sAttr = (attrs.match(/\ss="[^"]*"/)||[''])[0];
+    if(/\st="s"/.test(attrs) && /<(?:\w+:)?v>/.test(cm[2]||'')) stat.removed++;
+    if(idx!==null) stat.added++;
+    row = row.replace(cellRe, ()=>mk(sAttr));
+  }else{
+    if(idx===null) return sheet;
+    stat.added++;
+    const target = colNum(ref.replace(/\d+$/,''));
+    let at = -1;
+    const cre = new RegExp('<'+sp+'c r="([A-Z]+)\\d+"','g'); let m;
+    while((m = cre.exec(row))){ if(colNum(m[1])>target){ at = m.index; break; } }
+    if(at<0) at = row.lastIndexOf('</'+sp+'row>');
+    row = row.slice(0,at) + mk('') + row.slice(at);
+  }
+  return sheet.replace(rowRe, ()=>row);
+}
+/* Aplica las respuestas a los XML del hoja y de las cadenas. Solo toca celdas que han cambiado. */
+function applyAnswersToXml(sheetXml, sstXml, questions){
+  const sp = detectPrefix(sheetXml,'sheetData');
+  const sst = parseSst(sstXml);
+  const newStrings = []; const stat = {added:0, removed:0};
+  let sheet = sheetXml, changed = 0;
+  const strIndex = (text)=>{
+    if(sst.map.has(text)) return sst.map.get(text);
+    const i = sst.n + newStrings.length;
+    newStrings.push(text); sst.map.set(text, i);
+    return i;
+  };
+  questions.forEach(q=>{
+    const o = q.orig || {status:'',valor:'',obs:''};
+    const want = [
+      ['F', cleanText(q.valor,10),  cleanText(o.valor,10),  true ],
+      ['G', q.status? XL_LABEL[q.status] : '', o.status? XL_LABEL[o.status] : '', false],
+      ['H', cleanText(q.obs,100),   cleanText(o.obs,100),   true ],
+    ];
+    want.forEach(([col, now, before])=>{
+      if(now===before) return;                    // sin cambios: no se toca la celda original
+      sheet = setCellString(sheet, sp, col+q.row, now? strIndex(now) : null, stat);
+      changed++;
+    });
+  });
+  let sstOut = sstXml;
+  if(newStrings.length || stat.added!==stat.removed){
+    const ssp = sst.sp;
+    const add = newStrings.map(t=>'<'+ssp+'si><'+ssp+'t'+(/^\s|\s$/.test(t)?' xml:space="preserve"':'')+'>'+xmlEsc(t)+'</'+ssp+'t></'+ssp+'si>').join('');
+    sstOut = sstOut.replace('</'+ssp+'sst>', add+'</'+ssp+'sst>');
+    sstOut = sstOut.replace(/(<(?:\w+:)?sst\b[^>]*?\scount=")(\d+)(")/, (m,a,n,b)=>a+Math.max(0,(+n)+stat.added-stat.removed)+b);
+    sstOut = sstOut.replace(/(<(?:\w+:)?sst\b[^>]*?\suniqueCount=")(\d+)(")/, (m,a,n,b)=>a+((+n)+newStrings.length)+b);
+  }
+  return {sheet, sst:sstOut, changed, newStrings:newStrings.length};
+}
+async function buildXlsxBlob(audit){
+  if(!audit.originalXlsx) throw new Error('Este informe se creó con una versión anterior y no guarda el Excel original. Pulsa «Excel nuevo» y vuelve a cargar el Excel de la estación.');
+  const zip = await JSZip.loadAsync(audit.originalXlsx);
+  let sheetPath = 'xl/worksheets/sheet1.xml';
+  if(!zip.file(sheetPath)){
+    const cand = Object.keys(zip.files).filter(p=>/^xl\/worksheets\/sheet\d+\.xml$/.test(p)).sort();
+    if(!cand.length) throw new Error('El Excel no tiene ninguna hoja.');
+    sheetPath = cand[0];
+  }
+  const sstFile = zip.file('xl/sharedStrings.xml');
+  if(!sstFile) throw new Error('El Excel no tiene tabla de textos (sharedStrings).');
+  const res = applyAnswersToXml(await zip.file(sheetPath).async('string'), await sstFile.async('string'), audit.questions);
+  zip.file(sheetPath, res.sheet, {createFolders:false});
+  zip.file('xl/sharedStrings.xml', res.sst, {createFolders:false});
+  return zip.generateAsync({type:'blob', compression:'DEFLATE', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function xlsxFileName(a){ return a.fileName || ('ENCUESTA_SO_'+(a.name||'ESTACION')+'.xlsx'); }

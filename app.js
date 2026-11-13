@@ -82,7 +82,7 @@ function auditCard(a){
   const st = auditStats(a);
   const d = document.createElement('div'); d.className='audit-card';
   d.innerHTML = '<div class="info"><div class="nm">'+esc(a.name)+' · '+esc(a.ceco)+'</div>'+
-    '<div class="meta">'+esc(a.fecha)+' · '+st.photos+' fotos</div>'+
+    '<div class="meta">'+esc(a.fecha)+' · '+st.photos+' fotos'+(a.exportedXlsx?' · Excel ✔':'')+(a.exportedPdf?' · PDF ✔':'')+'</div>'+
     '<div class="meta"><span class="pill" style="background:var(--bad)">'+st.NO+' no conformes</span>'+
     (st.NO? '<span class="pill" style="background:'+(st.ncSinFoto?'var(--warn)':'var(--ok)')+'">'+(st.ncSinFoto? st.ncSinFoto+' sin foto':'todas con foto')+'</span>':'')+'</div></div>'+
     '<div class="del">🗑</div>';
@@ -105,10 +105,10 @@ async function handleExcel(file){
     const existing = (await dbAll()).find(a=>a.id===id);
     unbusy();
     if(existing){
-      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos.')) return;
-      cur = mergeAudit(existing, parsed, file.name);
+      if(!confirm('Ya tienes un informe de '+parsed.meta.name+' ('+parsed.meta.fecha+').\n\n¿Actualizar sus respuestas con este Excel? Se mantienen tus fotos y lo que hayas rellenado en la app.')) return;
+      cur = mergeAudit(existing, parsed, file.name, buf);
     }else{
-      cur = newAudit(parsed, file.name, getSettings());
+      cur = newAudit(parsed, file.name, getSettings(), buf);
     }
     await saveNow();
     filter='all';
@@ -144,14 +144,14 @@ function renderHeaderCard(){
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
 }
 function renderStats(){
-  const st=auditStats(cur), otros=st.PTE+st[''];
+  const st=auditStats(cur);
   const box=(n,l,c)=>'<div class="stat"><b style="color:'+c+'">'+n+'</b><span>'+l+'</span></div>';
   $('stats').innerHTML = box(st.SI,'Correcto','var(--ok)')+box(st.NO,'No conf.','var(--bad)')+box(st.NA,'NA','#000')+
-    (otros?box(otros,'Otros','var(--pte)'):'')+box(st.photos,'Fotos','var(--orange)');
+    (st.PTE?box(st.PTE,'PTE','#000'):'')+(st['']?box(st[''],'Sin valorar','var(--warn)'):'')+box(st.photos,'Fotos','var(--orange)');
 }
 function renderFilters(){
   const st=auditStats(cur);
-  const defs=[['all','Todas ('+cur.questions.length+')'],['nc','No conformes ('+st.NO+')'],['ncs','NC sin foto ('+st.ncSinFoto+')'],['ph','Con fotos']];
+  const defs=[['all','Todas ('+cur.questions.length+')'],['sv','Sin valorar ('+st['']+')'],['nc','No conformes ('+st.NO+')'],['ncs','NC sin foto ('+st.ncSinFoto+')'],['ph','Con fotos']];
   $('filters').innerHTML='';
   defs.forEach(([k,l])=>{
     const b=document.createElement('button'); b.className='chip'+(filter===k?' on':''); b.textContent=l;
@@ -162,6 +162,7 @@ function renderFilters(){
 function refreshTop(){ renderStats(); renderFilters(); }
 function matches(q){
   const n=(cur.photos[q.num]||[]).length;
+  if(filter==='sv') return !q.status;
   if(filter==='nc') return q.status==='NO';
   if(filter==='ncs') return q.status==='NO' && n===0;
   if(filter==='ph') return n>0;
@@ -191,13 +192,32 @@ function renderList(){
   if(!shown) root.insertAdjacentHTML('beforeend','<div class="empty">No hay preguntas en este filtro.</div>');
 }
 
+const VALS=[['SI','SÍ'],['NO','NO'],['NA','N/A'],['PTE','PTE']];
 function questionCard(q){
-  const key = q.status || 'none';
-  const el=document.createElement('div'); el.className='q s-'+key; el.dataset.num=q.num;
+  const el=document.createElement('div'); el.className='q s-'+(q.status||'none'); el.dataset.num=q.num;
   el.innerHTML =
     '<div class="q-head"><span class="q-num">PREGUNTA '+q.num+'</span><span class="q-badge">'+STATUS[q.status].word+'</span></div>'+
     '<div class="q-text">'+esc(q.text)+'</div>'+
+    '<div class="vrow">'+VALS.map(([k,l])=>'<button type="button" class="vb'+(q.status===k?' on v-'+k:'')+'" data-v="'+k+'">'+l+'</button>').join('')+'</div>'+
+    '<div class="frow"><div class="ff fv"><label>Valor / Fecha</label><input type="text" maxlength="10" autocomplete="off" autocorrect="off" enterkeyhint="done" data-f="valor"></div>'+
+    '<div class="ff fo"><label>Observaciones</label><textarea rows="2" maxlength="100" autocomplete="off" enterkeyhint="done" data-f="obs"></textarea></div></div>'+
     '<div class="photos"></div>';
+  el.querySelector('[data-f="valor"]').value = q.valor||'';
+  el.querySelector('[data-f="obs"]').value = q.obs||'';
+  el.querySelectorAll('.vb').forEach(b=>{
+    b.onclick=()=>{
+      q.status = (q.status===b.dataset.v) ? '' : b.dataset.v;           // tocar otra vez = quitar
+      el.className='q s-'+(q.status||'none');
+      el.querySelector('.q-badge').textContent=STATUS[q.status].word;
+      el.querySelectorAll('.vb').forEach(x=>{ x.className='vb'+(q.status===x.dataset.v?' on v-'+x.dataset.v:''); });
+      refreshTop(); scheduleSave();
+    };
+  });
+  el.querySelector('[data-f="valor"]').oninput = e=>{ q.valor=e.target.value; scheduleSave(); };
+  el.querySelector('[data-f="obs"]').oninput = e=>{
+    if(/[\r\n]/.test(e.target.value)) e.target.value=e.target.value.replace(/[\r\n]+/g,' ');
+    q.obs=e.target.value; scheduleSave();
+  };
   fillPhotos(el.querySelector('.photos'), q.num);
   return el;
 }
@@ -212,7 +232,7 @@ function fillPhotos(row, num){
   row.innerHTML='';
   (cur.photos[num]||[]).forEach((p,i)=>{
     const t=document.createElement('div'); t.className='th';
-    t.innerHTML='<img src="'+(p.thumb||p.data)+'"><div class="sz">'+(p.size||'L')+'</div>';
+    t.innerHTML='<img src="'+(p.thumb||p.data)+'"><div class="sz">'+(p.size||'M')+'</div>';
     t.onclick=()=>editPhoto(num,i);
     row.appendChild(t);
   });
@@ -248,7 +268,7 @@ $('filePhoto').onchange = async e=>{
       const orig=scaledDataURL(img,1600,0.85);
       URL.revokeObjectURL(url);
       unbusy();
-      const res=await openEditor({orig, size:'L', canDelete:false, title:files.length>1?('Foto '+(i+1)+' de '+files.length):'Ajustar foto'});
+      const res=await openEditor({orig, size:'M', canDelete:false, title:files.length>1?('Foto '+(i+1)+' de '+files.length):'Ajustar foto'});
       if(!res || res.deleted) break;
       (cur.photos[num]=cur.photos[num]||[]).push({orig, data:res.data, thumb:res.thumb, w:res.w, h:res.h, size:res.size, edit:res.edit});
       await saveNow(); refreshCard(num);
@@ -342,7 +362,7 @@ $('bankUse').onclick = async ()=>{
   const arr = cur.photos[num] = cur.photos[num] || [];
   bankSel.forEach(id=>{
     const b=bank().find(x=>x.id===id); if(!b) return;
-    arr.push({bankId:b.id, data:b.data, thumb:b.thumb, w:b.w, h:b.h, size:'L', edit:null});
+    arr.push({bankId:b.id, data:b.data, thumb:b.thumb, w:b.w, h:b.h, size:'M', edit:null});
   });
   const n=bankSel.length;
   $('bankModal').classList.add('hidden');
@@ -467,7 +487,7 @@ function edClose(result){
 async function openEditor(opts){
   const img=await loadImage(opts.orig);
   return new Promise(async resolve=>{
-    ED.resolve=resolve; ED.img=img; ED.size=opts.size||'L'; ED.rot=opts.edit?opts.edit.rot:0;
+    ED.resolve=resolve; ED.img=img; ED.size=opts.size||'M'; ED.rot=opts.edit?opts.edit.rot:0;
     $('edTitle').textContent=opts.title||'Ajustar foto';
     $('edDel').classList.toggle('hidden',!opts.canDelete);
     edSizeUI();
@@ -512,12 +532,38 @@ $('pvSave').onclick = async ()=>{
     }else{
       downloadBlob(pdfBlob, name);
     }
-    cur.status='finalizado'; await saveNow(); toast('PDF listo ✔');
+    cur.exportedPdf=true; await markDone(); toast('PDF listo ✔');
   }catch(err){
     if(err && err.name==='AbortError') return;
     console.error(err); downloadBlob(pdfBlob, name);
   }
 };
+async function markDone(){
+  if(cur.exportedPdf && cur.exportedXlsx) cur.status='finalizado';
+  await saveNow();
+}
+async function saveExcel(){
+  if(!cur) return;
+  const sv = cur.questions.filter(q=>!q.status).length;
+  if(sv && !confirm('Faltan '+sv+' preguntas sin valorar (SÍ / NO / N/A / PTE).\n\nEl Excel saldría con esas celdas vacías. ¿Guardarlo igualmente?')) return;
+  try{
+    busy('Preparando Excel…');
+    await saveNow();
+    const blob = await buildXlsxBlob(cur);
+    unbusy();
+    const name = xlsxFileName(cur);
+    const file = new File([blob], name, {type:blob.type});
+    if(navigator.canShare && navigator.canShare({files:[file]})) await navigator.share({files:[file], title:name});
+    else downloadBlob(blob, name);
+    cur.exportedXlsx=true; await markDone(); toast('Excel listo ✔');
+  }catch(err){
+    unbusy();
+    if(err && err.name==='AbortError') return;
+    console.error(err); alert('No se pudo preparar el Excel.\n\n'+(err&&err.message?err.message:err));
+  }
+}
+$('xlsxBtn').onclick = saveExcel;
+$('xlsxBtn2').onclick = saveExcel;
 $('pvOpen').onclick = ()=>{
   if(!pdfBlob) return;
   window.open(URL.createObjectURL(pdfBlob), '_blank');
@@ -528,6 +574,7 @@ function missingLibs(){
   const m=[];
   if(typeof XLSX==='undefined') m.push('xlsx.full.min.js');
   if(typeof jspdf==='undefined') m.push('jspdf.umd.min.js');
+  if(typeof JSZip==='undefined') m.push('jszip.min.js');
   if(typeof parseWorkbook==='undefined') m.push('core.js');
   return m;
 }
