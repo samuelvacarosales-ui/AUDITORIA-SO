@@ -101,9 +101,39 @@ const SERVICE_OBS = 'NO DISPONE';
 function normTxt(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
 function ruleMatches(q, kw){ return normTxt(q.text).includes(kw); }
 /* Devuelve la lista de preguntas cuya regla no coincide con su texto */
+
+/* ---- Inventarios 14-17: AJUSTE FISICO / VENTAS en € y % calculado ---- */
+const INV_Q = {14:'TABACO', 15:'ONCE', 16:'BUTANO', 17:'BEBIDAS CALIENTES'};
+function parseNum(s){
+  s=String(s==null?'':s).replace(/[€\s]/g,'');
+  if(!s||s==='-'||s==='+') return NaN;
+  if(s.includes(',') && s.includes('.')) s=s.replace(/\./g,'').replace(',','.');
+  else if(s.includes(',')) s=s.replace(',','.');
+  else if(/^[-+]?\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
+  const n=Number(s); return isFinite(n)?n:NaN;
+}
+function fmtPct(p){
+  for(const d of [2,1,0]){ const t=p.toFixed(d).replace('.',',')+'%'; if(t.length<=10) return t; }
+  return '%';
+}
+function recalcInv(q){
+  const aj=parseNum(q.ajuste), ve=parseNum(q.ventas);
+  q.valor = (isFinite(aj)&&isFinite(ve)&&ve!==0) ? fmtPct(aj*100/ve) : '%';
+  const aj2=String(q.ajuste||'').trim(), ve2=String(q.ventas||'').trim();
+  q.obs = 'AJUSTE FISICO: '+(aj2?aj2+' ':'')+'€ VENTAS: '+(ve2?ve2+' ':'')+'€';
+}
+/* Encuestas creadas con una versión anterior: convierte 14-17 sin tocar nada más */
+function migrateInv(questions){
+  let ch=false;
+  questions.forEach(q=>{
+    if(INV_Q[q.num] && !q.inv && !q.valor && !q.obs && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); ch=true; }
+  });
+  return ch;
+}
 function applyDefaults(questions){
   const warn = [];
   questions.forEach(q=>{
+    if(INV_Q[q.num] && !q.inv && !q.valor && !q.obs && ruleMatches(q, INV_Q[q.num])){ q.inv=true; q.ajuste=''; q.ventas=''; recalcInv(q); }
     if(q.status) return;                              // lo que ya traiga rellenado el Excel se respeta
     const r = DEFAULT_NA[q.num];
     if(r){
@@ -152,7 +182,7 @@ function mergeAudit(audit, parsed, fileName, buf){
   parsed.questions.forEach(nq=>{
     const o = oldByNum[nq.num];
     if(o && o.orig && (o.status!==o.orig.status || o.valor!==o.orig.valor || o.obs!==o.orig.obs)){
-      nq.status=o.status; nq.valor=o.valor; nq.obs=o.obs;     // lo que rellenaste en la app tiene prioridad
+      nq.status=o.status; nq.valor=o.valor; nq.obs=o.obs; if(o.inv){ nq.inv=true; nq.ajuste=o.ajuste; nq.ventas=o.ventas; }     // lo que rellenaste en la app tiene prioridad
     }
   });
   audit.ceco = m.ceco; audit.name = m.name; audit.cPN = m.cPN;

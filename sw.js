@@ -1,6 +1,6 @@
 /* Service worker: primero red (así las actualizaciones llegan solas),
    y si no hay cobertura, usa la copia guardada. */
-const CACHE = 'anexo-so-v7';
+const CACHE = 'anexo-so-v9';
 const ASSETS = ['./','./index.html','./app.js','./core.js','./manifest.json',
   './xlsx.full.min.js','./jspdf.umd.min.js','./jszip.min.js','./icon-192.png','./icon-512.png'];
 

@@ -124,7 +124,7 @@ async function handleExcel(file){
 $('fileNew').onchange = e=>{ const f=e.target.files[0]; e.target.value=''; handleExcel(f); };
 $('fileReload').onchange = e=>{ const f=e.target.files[0]; e.target.value=''; handleExcel(f); };
 
-async function openAudit(a){ cur=a; filter='all'; renderAudit(); showScreen('audit'); }
+async function openAudit(a){ cur=a; if(migrateInv(cur.questions)) await saveNow(); filter='all'; renderAudit(); showScreen('audit'); }
 
 /* ---------------- pantalla de auditoría ---------------- */
 function renderAudit(){
@@ -209,11 +209,24 @@ function questionCard(q){
     '<div class="q-head"><span class="q-num">PREGUNTA '+q.num+'</span><span class="q-badge">'+STATUS[q.status].word+'</span></div>'+
     '<div class="q-text">'+esc(q.text)+'</div>'+
     '<div class="vrow">'+VALS.map(([k,l])=>'<button type="button" class="vb'+(q.status===k?' on v-'+k:'')+'" data-v="'+k+'">'+l+'</button>').join('')+'</div>'+
-    '<div class="frow"><div class="ff fv"><label>Valor / Fecha</label><input type="text" maxlength="10" autocomplete="off" autocorrect="off" enterkeyhint="done" data-f="valor"></div>'+
-    '<div class="ff fo"><label>Observaciones</label><textarea rows="2" maxlength="100" autocomplete="off" enterkeyhint="done" data-f="obs"></textarea></div></div>'+
+    (q.inv
+      ? '<div class="frow"><div class="ff"><label>Ajuste físico (€)</label><input type="text" inputmode="decimal" maxlength="14" autocomplete="off" data-f="ajuste"></div>'+
+        '<div class="ff"><label>Ventas (€)</label><input type="text" inputmode="decimal" maxlength="14" autocomplete="off" data-f="ventas"></div></div>'+
+        '<div class="invres">Valor: <b data-r="valor"></b> · <span data-r="obs"></span></div>'
+      : '<div class="frow"><div class="ff fv"><label>Valor / Fecha</label><input type="text" maxlength="10" autocomplete="off" autocorrect="off" enterkeyhint="done" data-f="valor"></div>'+
+        '<div class="ff fo"><label>Observaciones</label><textarea rows="2" maxlength="100" autocomplete="off" enterkeyhint="done" data-f="obs"></textarea></div></div>')+
     '<div class="photos"></div>';
-  el.querySelector('[data-f="valor"]').value = q.valor||'';
-  el.querySelector('[data-f="obs"]').value = q.obs||'';
+  if(q.inv){
+    const upd=()=>{ el.querySelector('[data-r="valor"]').textContent=q.valor; el.querySelector('[data-r="obs"]').textContent=q.obs; };
+    ['ajuste','ventas'].forEach(f=>{
+      const i=el.querySelector('[data-f="'+f+'"]'); i.value=q[f]||'';
+      i.oninput=e=>{ q[f]=e.target.value; recalcInv(q); upd(); scheduleSave(); };
+    });
+    upd();
+  }else{
+    el.querySelector('[data-f="valor"]').value = q.valor||'';
+    el.querySelector('[data-f="obs"]').value = q.obs||'';
+  }
   el.querySelectorAll('.vb').forEach(b=>{
     b.onclick=()=>{
       q.status = (q.status===b.dataset.v) ? '' : b.dataset.v;           // tocar otra vez = quitar
@@ -223,11 +236,13 @@ function questionCard(q){
       refreshTop(); scheduleSave();
     };
   });
-  el.querySelector('[data-f="valor"]').oninput = e=>{ q.valor=e.target.value; scheduleSave(); };
-  el.querySelector('[data-f="obs"]').oninput = e=>{
-    if(/[\r\n]/.test(e.target.value)) e.target.value=e.target.value.replace(/[\r\n]+/g,' ');
-    q.obs=e.target.value; scheduleSave();
-  };
+  if(!q.inv){
+    el.querySelector('[data-f="valor"]').oninput = e=>{ q.valor=e.target.value; scheduleSave(); };
+    el.querySelector('[data-f="obs"]').oninput = e=>{
+      if(/[\r\n]/.test(e.target.value)) e.target.value=e.target.value.replace(/[\r\n]+/g,' ');
+      q.obs=e.target.value; scheduleSave();
+    };
+  }
   fillPhotos(el.querySelector('.photos'), q.num);
   return el;
 }
