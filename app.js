@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v9';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v10';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -138,7 +138,7 @@ function renderHeaderCard(){
    '<div class="fld"><label>Fecha</label><div class="ro">'+esc(a.fecha)+'</div></div>'+
    '<div class="fld full"><label>Nombre E.S.</label><div class="ro">'+esc(a.name)+'</div></div>'+
    '<div class="fld full"><label>Auditor</label><input id="fAud" value="'+esc(a.auditor||'')+'"></div></div>'+
-   '<label class="swrow"><span class="swtxt"><b>Esta estación NO dispone de servicios</b><small>Pone N/A + «NO DISPONE» en las preguntas 6, 8, 56, 65 y 71</small></span>'+
+   '<label class="swrow"><span class="swtxt"><b>Esta estación NO dispone de servicios</b><small>Pone N/A + «NO DISPONE» en las preguntas 6, 8, 48, 56, 65 y 71</small></span>'+
    '<span class="sw"><input type="checkbox" id="sinServ"><i></i></span></label>'+
    (nb? '' : '<div class="hint">Elige de una vez las fotos de esta estación y luego solo las marcas en cada pregunta.</div>')+
    '<div class="hbtns"><div class="linkbtn'+(nb?'':' main')+'" id="bankBtn">📷 Fotos de la estación ('+nb+')</div>'+
@@ -148,7 +148,7 @@ function renderHeaderCard(){
     const on = e.target.checked, warn = setSinServicios(cur, on);
     renderList(); refreshTop(); scheduleSave();
     toast(warn.length ? ('⚠ Las preguntas '+warn.join(', ')+' no coinciden con la plantilla y no se han tocado')
-         : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
+         : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 48, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
   };
   $('bankBtn').onclick = ()=>openBank('manage');
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
@@ -210,7 +210,7 @@ function questionCard(q){
     '<div class="q-text">'+esc(q.text)+'</div>'+
     '<div class="vrow">'+VALS.map(([k,l])=>'<button type="button" class="vb'+(q.status===k?' on v-'+k:'')+'" data-v="'+k+'">'+l+'</button>').join('')+'</div>'+
     (q.inv
-      ? '<div class="frow"><div class="ff"><label>Ajuste físico (€)</label><input type="text" inputmode="decimal" maxlength="14" autocomplete="off" data-f="ajuste"></div>'+
+      ? '<div class="frow"><div class="ff"><label>Ajuste físico (€)</label><div class="sgn"><input type="text" inputmode="decimal" maxlength="14" autocomplete="off" data-f="ajuste"><button type="button" class="sgnb" aria-label="Cambiar signo">±</button></div></div>'+
         '<div class="ff"><label>Ventas (€)</label><input type="text" inputmode="decimal" maxlength="14" autocomplete="off" data-f="ventas"></div></div>'+
         '<div class="invres">Valor: <b data-r="valor"></b> · <span data-r="obs"></span></div>'
       : '<div class="frow"><div class="ff fv"><label>Valor / Fecha</label><input type="text" maxlength="10" autocomplete="off" autocorrect="off" enterkeyhint="done" data-f="valor"></div>'+
@@ -222,6 +222,11 @@ function questionCard(q){
       const i=el.querySelector('[data-f="'+f+'"]'); i.value=q[f]||'';
       i.oninput=e=>{ q[f]=e.target.value; recalcInv(q); upd(); scheduleSave(); };
     });
+    el.querySelector('.sgnb').onclick=()=>{
+      const i=el.querySelector('[data-f="ajuste"]'); let v=i.value.trim();
+      v = v.startsWith('-') ? v.slice(1) : (v ? '-'+v : '-');
+      i.value=v; i.oninput({target:i}); i.focus();
+    };
     upd();
   }else{
     el.querySelector('[data-f="valor"]').value = q.valor||'';
