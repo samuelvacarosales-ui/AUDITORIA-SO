@@ -211,7 +211,7 @@ input[type=file]{display:none;}
   <div class="screen hidden" id="s-settings">
     <div class="hcard"><div class="hgrid">
       <div class="fld full"><label>Nombre del auditor</label><input id="setAuditor" type="text"></div>
-      <div class="fld full"><label>Clave de Anthropic (para leer la foto del inventario)</label><input id="setKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="sk-ant-..."></div>
+      <div class="fld full"><label>Clave de Anthropic (OPCIONAL, solo si quieres leer con IA)</label><input id="setKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="sk-ant-..."></div>
     </div><div class="hint">La clave se guarda solo en este móvil. Se crea en console.anthropic.com → API Keys, con unos 5 € de saldo sobra para meses. Leer una foto cuesta menos de 1 céntimo.</div></div>
     <div class="pad"><button class="btn btn-p" id="saveSet" style="width:100%">Guardar ajustes</button></div>
   </div>
@@ -258,6 +258,14 @@ input[type=file]{display:none;}
 <input type="file" id="filePhoto" accept="image/*" multiple>
 <input type="file" id="fileReload" accept=".xlsx">
 <input type="file" id="fileInv" accept="image/*">
+<div class="sheet hidden" id="scanSheet"><div class="sheet-box" style="max-height:92vh;overflow:auto">
+  <b style="font-size:16px">Foto de inventario</b>
+  <div class="hint" style="margin:0"><b>1.</b> Toca el recuadro de abajo y, en el menú, elige <b>«Escanear texto»</b> (icono de cámara con renglones; en el teclado también sale arriba).<br><b>2.</b> Apunta a tu nota y pulsa <b>Insertar</b>.<br><b>3.</b> Pulsa <b>Interpretar</b>: verás lo que ha entendido para corregirlo antes de aplicar.</div>
+  <textarea id="scanTxt" rows="7" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:16px" placeholder="TABACO A -6&#10;CAFÉ A -18,79&#10;V 19.122,40 ..."></textarea>
+  <button class="btn btn-p" id="scanGo">Interpretar</button>
+  <button class="btn btn-s hidden" id="scanAI">📷 Leer foto con IA (clave en Ajustes)</button>
+  <button class="btn btn-s" id="scanCancel" style="text-align:center">Cancelar</button>
+</div></div>
 <div class="sheet hidden" id="invSheet"><div class="sheet-box" style="max-height:92vh;overflow:auto">
   <b style="font-size:16px">Esto es lo que he leído</b>
   <div class="hint" style="margin:0">Revísalo y corrige lo que haga falta antes de aplicar.</div>

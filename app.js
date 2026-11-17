@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v12';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v13';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -159,6 +159,13 @@ $('fileInv').onchange = async e=>{
     unbusy(); showInvConfirm(r);
   }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
 };
+$('scanCancel').onclick = ()=>$('scanSheet').classList.add('hidden');
+$('scanAI').onclick = ()=>{ $('scanSheet').classList.add('hidden'); $('fileInv').click(); };
+$('scanGo').onclick = ()=>{
+  const txt=$('scanTxt').value;
+  if(!txt.trim()){ toast('Primero escanea o escribe el texto de la nota', 3200); return; }
+  $('scanSheet').classList.add('hidden'); showInvConfirm(parseInventoryText(txt));
+};
 $('invCancel').onclick = ()=>$('invSheet').classList.add('hidden');
 $('invApply').onclick = ()=>{
   const r={tabaco:{},cafe:{},once:{},butano:{}};
@@ -230,8 +237,8 @@ function renderHeaderCard(){
          : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 48, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
   };
   $('invBtn').onclick = ()=>{
-    if(!getSettings().apiKey){ toast('Primero pon tu clave de Anthropic en Ajustes (⚙ en la portada)', 4200); return; }
-    $('fileInv').click();
+    $('scanTxt').value=''; $('scanAI').classList.toggle('hidden', !getSettings().apiKey);
+    $('scanSheet').classList.remove('hidden');
   };
   $('bankBtn').onclick = ()=>openBank('manage');
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };

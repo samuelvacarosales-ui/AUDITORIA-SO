@@ -187,6 +187,31 @@ function applyInvReading(audit, r){
   return warn;
 }
 
+
+/* ---- Interpretar el texto escaneado (Texto en directo de iOS) ---- */
+function parseInventoryText(raw){
+  const t = String(raw||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[−–—]/g,'-');
+  const NUM = '(-?\\s?\\d[\\d.,]*)';
+  const out = {tabaco:{a:'',v:''},cafe:{a:'',v:''},once:{a:'',v:''},butano:{a:'',v:''},ffijo:'',fmaniobra:'',dudas:''};
+  const dud = [];
+  const after = (kw)=>{                       // primera cifra tras la palabra, antes de una V o de otra palabra clave
+    const m = t.match(new RegExp(kw+'[^0-9\\-\\n]{0,8}?(?:\\bA\\b)?[^0-9\\-\\n]{0,4}'+NUM));
+    return m ? m[1].replace(/\s/g,'').replace(/[.,]+$/,'') : '';
+  };
+  out.tabaco.a = after('TABAC\\w*'); out.cafe.a = after('CAFE\\w*'); out.once.a = after('ONCE'); out.butano.a = after('BUTAN\\w*');
+  const ff = t.match(/(?:F\.?\s*FIJO|FFIJO|FFIJ\w*|FONDO\s+FIJO)[^0-9\n]{0,6}(\d[\d.,]*)/);
+  const fm = t.match(/(?:F\.?\s*MANIOBRA|F\.?\s*MANIO\w*|FONDO\s+(?:DE\s+)?MANIOBRA|MANIOBRA)[^0-9\n]{0,6}(\d[\d.,]*)/);
+  out.ffijo = ff ? ff[1].replace(/[.,]+$/,'') : ''; out.fmaniobra = fm ? fm[1].replace(/[.,]+$/,'') : '';
+  const vs = []; const re = /(?:^|[^A-Z])V\s*[:=]?\s*(-?\d[\d.,]*)/g; let m;
+  while((m = re.exec(t))) vs.push(m[1].replace(/[.,]+$/,''));
+  ['tabaco','cafe','once','butano'].forEach((k,i)=>{ out[k].v = vs[i]||''; });
+  if(vs.length && vs.length!==4) dud.push('He encontrado '+vs.length+' cifras de ventas (V) y esperaba 4: comprueba que cada una está en su fila.');
+  ['tabaco','cafe','once','butano'].forEach(k=>{ if(out[k].a==='') dud.push('Falta el ajuste de '+k+'.'); });
+  if(!vs.length && !out.tabaco.a) dud.push('No he reconocido nada. Revisa el texto o escríbelo a mano en la ventana siguiente.');
+  out.dudas = dud.join(' ');
+  return out;
+}
+
 function sanitizeId(s){ return String(s||'').replace(/[^a-zA-Z0-9]/g,'_'); }
 
 function newAudit(parsed, fileName, settings, buf){
