@@ -120,9 +120,16 @@ function invBlank(q){
   const v=String(q.valor||'').trim(), o=String(q.obs||'').trim();
   return (!v || v==='%') && (!o || /^AJUSTE\s*F[IÍ]SICO/i.test(o));
 }
+/* Tolerancias de inventario (en %, positivo o negativo): fuera de rango → NO, dentro → SÍ */
+const INV_TOL = {14:0.50, 15:0.85, 16:0, 17:0.85};
 function recalcInv(q){
   const aj=parseNum(q.ajuste), ve=parseNum(q.ventas);
-  q.valor = (isFinite(aj)&&isFinite(ve)&&ve!==0) ? fmtPct(aj*100/ve) : '%';
+  const ok = isFinite(aj)&&isFinite(ve)&&ve!==0;
+  q.valor = ok ? fmtPct(aj*100/ve) : '%';
+  if(ok && INV_TOL[q.num]!==undefined && (q.status==='SI'||q.status==='NO'||!q.status)){
+    const p = Math.round(aj*100/ve*100)/100;                       // el % tal como se ve (2 decimales)
+    q.status = Math.abs(p) <= INV_TOL[q.num]+1e-9 ? 'SI' : 'NO';
+  }
   const aj2=String(q.ajuste||'').trim(), ve2=String(q.ventas||'').trim();
   q.obs = 'AJUSTE FISICO: '+(aj2?aj2+' ':'')+'€ VENTAS: '+(ve2?ve2+' ':'')+'€';
 }

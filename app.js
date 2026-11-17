@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v15';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v16';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -391,7 +391,15 @@ function questionCard(q){
     const upd=()=>{ el.querySelector('[data-r="valor"]').textContent=q.valor; el.querySelector('[data-r="obs"]').textContent=q.obs; };
     ['ajuste','ventas'].forEach(f=>{
       const i=el.querySelector('[data-f="'+f+'"]'); i.value=q[f]||'';
-      i.oninput=e=>{ q[f]=e.target.value; recalcInv(q); upd(); scheduleSave(); };
+      i.oninput=e=>{
+        q[f]=e.target.value; const before=q.status; recalcInv(q); upd();
+        if(q.status!==before){
+          el.className='q s-'+(q.status||'none'); el.querySelector('.q-badge').textContent=STATUS[q.status].word;
+          el.querySelectorAll('.vb').forEach(x=>{ x.className='vb'+(q.status===x.dataset.v?' on v-'+x.dataset.v:''); });
+          refreshTop();
+        }
+        scheduleSave();
+      };
     });
     el.querySelector('.sgnb').onclick=()=>{
       const i=el.querySelector('[data-f="ajuste"]'); let v=i.value.trim();
