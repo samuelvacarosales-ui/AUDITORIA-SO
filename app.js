@@ -21,7 +21,7 @@ const dbDel = id => new Promise((res,rej)=>{ const tx=db.transaction('audits','r
 function getSettings(){
   let s = {};
   try{ s = JSON.parse(localStorage.getItem('anexoSO_settings'))||{}; }catch(e){}
-  return {auditor: s.auditor || 'SAMUEL VACA', apiKey: s.apiKey || ''};
+  return {auditor: s.auditor || 'SAMUEL VACA', apiKey: s.apiKey || '', geminiKey: s.geminiKey || ''};
 }
 function toast(msg, ms){
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v14';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v15';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -61,10 +61,10 @@ $('backBtn').onclick = async ()=>{
   showScreen('home');
 };
 $('settingsBtn').onclick = ()=>{
-  const s=getSettings(); $('setAuditor').value=s.auditor; $('setKey').value=s.apiKey; showScreen('settings');
+  const s=getSettings(); $('setAuditor').value=s.auditor; $('setKey').value=s.apiKey; $('setGem').value=s.geminiKey; showScreen('settings');
 };
 $('saveSet').onclick = ()=>{
-  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA', apiKey:$('setKey').value.trim()}));
+  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA', apiKey:$('setKey').value.trim(), geminiKey:$('setGem').value.trim()}));
   toast('Ajustes guardados'); showScreen('home');
 };
 
@@ -110,6 +110,35 @@ async function shrinkToJpeg(file, max){
   cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
   return cv.toDataURL('image/jpeg',0.88).split(',')[1];
 }
+function aiMode(){ const s=getSettings(); return s.geminiKey ? 'gemini' : s.apiKey ? 'claude' : ''; }
+async function askGeminiInventory(file){
+  const key = getSettings().geminiKey;
+  const b64 = await shrinkToJpeg(file, 1800);
+  const body = JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:INV_PROMPT}]}],
+    generationConfig:{temperature:0, responseMimeType:'application/json'}});
+  let resp=null, lastStatus=0;
+  for(const model of ['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest']){
+    try{
+      resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
+        {method:'POST', headers:{'content-type':'application/json','x-goog-api-key':key}, body});
+    }catch(e){ throw new Error('No hay conexión a internet. Prueba otra vez con cobertura.'); }
+    lastStatus = resp.status;
+    if(resp.status===404 || resp.status===503) continue;           // modelo retirado o saturado: prueba el siguiente
+    break;
+  }
+  if(lastStatus===400 || lastStatus===403){
+    let m=''; try{ m=(await resp.json()).error.message; }catch(e){}
+    throw new Error('Google ha rechazado la petición'+(m?': '+m:'')+'. Revisa que la clave de Gemini está bien copiada en Ajustes.');
+  }
+  if(lastStatus===429) throw new Error('Has llegado al límite gratuito de Google (por minuto o por día). Espera un poco y repite.');
+  if(!resp.ok) throw new Error('Error del servicio de Google ('+lastStatus+'). Inténtalo de nuevo en un momento.');
+  const data = await resp.json();
+  const txt = ((((data.candidates||[])[0]||{}).content||{}).parts||[]).map(p=>p.text||'').join('');
+  const m = txt.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error('No he podido entender la respuesta. Haz la foto más de cerca y con buena luz.');
+  try{ return JSON.parse(m[0]); }catch(e){ throw new Error('La respuesta llegó incompleta. Inténtalo de nuevo.'); }
+}
+function askAIInventory(file){ return aiMode()==='gemini' ? askGeminiInventory(file) : askClaudeInventory(file); }
 async function askClaudeInventory(file){
   const key = getSettings().apiKey;
   const b64 = await shrinkToJpeg(file, 1800);
@@ -151,17 +180,15 @@ function showInvConfirm(r){
   const d=$('invDoubts'); d.textContent = r.dudas ? ('⚠ '+r.dudas) : ''; d.classList.toggle('hidden', !r.dudas);
   $('invSheet').classList.remove('hidden');
 }
-let useAI=false;
 $('fileInv').onchange = async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
   $('scanSheet').classList.add('hidden');
   try{
     let r;
-    if(useAI){ busy('Leyendo la foto con IA…'); r = await askClaudeInventory(f); }
+    if(aiMode()){ busy('Leyendo la foto con IA…'); r = await askAIInventory(f); }
     else r = await ocrInventory(await createImageBitmap(f,{imageOrientation:'from-image'}));
     unbusy(); showInvConfirm(r);
   }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
-  useAI=false;
 };
 /* ---- lector gratuito (Tesseract, dentro del móvil) ---- */
 let tessWorker=null;
@@ -211,8 +238,6 @@ async function ocrInventory(bmp){
   return r;
 }
 $('scanCancel').onclick = ()=>$('scanSheet').classList.add('hidden');
-$('scanAI').onclick = ()=>{ $('scanSheet').classList.add('hidden'); useAI=true; $('fileInv').click(); };
-$('scanLib').onclick = ()=>{ useAI=false; };
 $('scanBank').onclick = ()=>{
   if(!bank().length){ toast('Esta estación aún no tiene fotos guardadas', 3000); return; }
   $('scanSheet').classList.add('hidden'); openBank('ocr', null);
@@ -293,7 +318,7 @@ function renderHeaderCard(){
          : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 48, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
   };
   $('invBtn').onclick = ()=>{
-    $('scanTxt').value=''; $('scanAI').classList.toggle('hidden', !getSettings().apiKey);
+    $('scanTxt').value=''; $('scanMode').textContent = aiMode()==='gemini' ? '✨ Lectura con IA gratuita de Google (Gemini)' : aiMode()==='claude' ? '✨ Lectura con IA de Claude' : 'Lectura gratuita sin IA (poco fiable con letra a mano). Para leer bien, pon tu clave gratuita de Gemini en Ajustes.';
     $('scanSheet').classList.remove('hidden');
   };
   $('bankBtn').onclick = ()=>openBank('manage');
@@ -539,8 +564,10 @@ $('bankUse').onclick = async ()=>{
     const b=bank().find(x=>x.id===bankSel[0]); if(!b) return;
     $('bankModal').classList.add('hidden');
     try{
-      const img=await loadImage(b.data);
-      busy('Preparando…'); const r=await ocrInventory(img); unbusy(); showInvConfirm(r);
+      let r;
+      if(aiMode()){ busy('Leyendo la foto con IA…'); r=await askAIInventory(await (await fetch(b.data)).blob()); }
+      else { const img=await loadImage(b.data); busy('Preparando…'); r=await ocrInventory(img); }
+      unbusy(); showInvConfirm(r);
     }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
     return;
   }

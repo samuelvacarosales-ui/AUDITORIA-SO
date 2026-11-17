@@ -211,8 +211,9 @@ input[type=file]{display:none;}
   <div class="screen hidden" id="s-settings">
     <div class="hcard"><div class="hgrid">
       <div class="fld full"><label>Nombre del auditor</label><input id="setAuditor" type="text"></div>
+      <div class="fld full"><label>Clave de Google Gemini (GRATIS, para leer la foto)</label><input id="setGem" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="AIza..."></div>
       <div class="fld full"><label>Clave de Anthropic (OPCIONAL, solo si quieres leer con IA)</label><input id="setKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="sk-ant-..."></div>
-    </div><div class="hint">La clave se guarda solo en este móvil. Se crea en console.anthropic.com → API Keys, con unos 5 € de saldo sobra para meses. Leer una foto cuesta menos de 1 céntimo.</div></div>
+    </div><div class="hint">Las claves se guardan solo en este móvil. La de Gemini es gratis: entra en aistudio.google.com con tu cuenta de Google → «Get API key» → «Create API key» (sin tarjeta). Si pones una, la foto se lee con IA automáticamente.</div></div>
     <div class="pad"><button class="btn btn-p" id="saveSet" style="width:100%">Guardar ajustes</button></div>
   </div>
 
@@ -260,11 +261,11 @@ input[type=file]{display:none;}
 <input type="file" id="fileInv" accept="image/*">
 <div class="sheet hidden" id="scanSheet"><div class="sheet-box" style="max-height:92vh;overflow:auto">
   <b style="font-size:16px">Foto de inventario</b>
-  <div class="hint" style="margin:0">Elige la foto de tu nota. La app la lee sola (gratis, sin internet) y luego te enseña lo que ha entendido para que lo corrijas antes de aplicar. Con letra a mano suele equivocarse en algunas cifras.</div>
+  <div class="hint" style="margin:0">Elige la foto de tu nota. La app la lee sola y luego te enseña lo que ha entendido para que lo corrijas antes de aplicar.</div>
+  <div id="scanMode" class="hint" style="margin:0;font-weight:700"></div>
   <label class="btn btn-p" for="fileInv" id="scanLib" style="display:block;text-align:left">📷 Elegir de la fototeca</label>
   <button class="btn btn-s" id="scanBank">🖼 De las fotos de la estación</button>
-  <button class="btn btn-s hidden" id="scanAI">✨ Leer con IA de Claude (clave en Ajustes)</button>
-  <details style="margin-top:2px"><summary style="font-size:13px;color:var(--soft)">O pega el texto ya escaneado</summary>
+    <details style="margin-top:2px"><summary style="font-size:13px;color:var(--soft)">O pega el texto ya escaneado</summary>
     <textarea id="scanTxt" rows="5" style="width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:16px" placeholder="TABACO A -6&#10;V 19.122,40 ..."></textarea>
     <button class="btn btn-s" id="scanGo" style="width:100%;margin-top:6px">Interpretar texto</button></details>
   <button class="btn btn-s" id="scanCancel" style="text-align:center">Cancelar</button>
