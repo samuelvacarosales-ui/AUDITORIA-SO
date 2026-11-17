@@ -28,7 +28,16 @@ function toast(msg, ms){
   clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('show'), ms||2400);
 }
 function busy(msg){ $('busyMsg').textContent=msg||'Procesando…'; $('busy').classList.remove('hidden'); }
-function unbusy(){ $('busy').classList.add('hidden'); }
+function unbusy(){ $('busy').classList.add('hidden'); $('busyCancel').classList.add('hidden'); }
+/* petición con tiempo máximo y botón Cancelar (para que nunca se quede colgada) */
+let aiCtl=null, aiCancelled=false;
+function showCancel(){ aiCancelled=false; $('busyCancel').classList.remove('hidden'); $('busyCancel').onclick=()=>{ aiCancelled=true; if(aiCtl) aiCtl.abort(); unbusy(); }; }
+async function fetchT(url, opts, ms){
+  aiCtl = new AbortController(); const t=setTimeout(()=>aiCtl.abort(), ms);
+  try{ return await fetch(url, Object.assign({signal:aiCtl.signal}, opts)); }
+  catch(e){ if(aiCancelled){ const c=new Error('cancelado'); c.cancelled=true; throw c; } const x=new Error(e&&e.name==='AbortError'?'timeout':'red'); x.kind=x.message; throw x; }
+  finally{ clearTimeout(t); }
+}
 const nextFrame = () => new Promise(r=>requestAnimationFrame(()=>r()));
 
 function scheduleSave(){ clearTimeout(saveTimer); saveTimer=setTimeout(saveNow,600); }
@@ -48,7 +57,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v16';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v17';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -116,16 +125,19 @@ async function askGeminiInventory(file){
   const b64 = await shrinkToJpeg(file, 1800);
   const body = JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:INV_PROMPT}]}],
     generationConfig:{temperature:0, responseMimeType:'application/json'}});
-  let resp=null, lastStatus=0;
-  for(const model of ['gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest']){
+  let resp=null, lastStatus=0, lastKind='';
+  const tries=['gemini-flash-latest','gemini-flash-latest','gemini-2.5-flash','gemini-flash-lite-latest'];
+  for(let i=0;i<tries.length;i++){
+    if(i>0) busy('Reintentando la lectura ('+i+'/'+(tries.length-1)+')…'), showCancel();
     try{
-      resp = await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',
-        {method:'POST', headers:{'content-type':'application/json','x-goog-api-key':key}, body});
-    }catch(e){ throw new Error('No hay conexión a internet. Prueba otra vez con cobertura.'); }
+      resp = await fetchT('https://generativelanguage.googleapis.com/v1beta/models/'+tries[i]+':generateContent',
+        {method:'POST', headers:{'content-type':'application/json','x-goog-api-key':key}, body}, 15000);
+    }catch(e){ if(e.cancelled) throw e; lastKind=e.kind; resp=null; continue; }   // sin respuesta a tiempo: reintenta
     lastStatus = resp.status;
-    if(resp.status===404 || resp.status===503) continue;           // modelo retirado o saturado: prueba el siguiente
+    if(resp.status===404 || resp.status===500 || resp.status===503) continue;   // modelo retirado o saturado: reintenta
     break;
   }
+  if(!resp) throw new Error(lastKind==='timeout' ? 'Google no responde (la conexión va lenta). Inténtalo de nuevo en un momento.' : 'No hay conexión a internet. Prueba otra vez con cobertura.');
   if(lastStatus===400 || lastStatus===403){
     let m=''; try{ m=(await resp.json()).error.message; }catch(e){}
     throw new Error('Google ha rechazado la petición'+(m?': '+m:'')+'. Revisa que la clave de Gemini está bien copiada en Ajustes.');
@@ -144,14 +156,14 @@ async function askClaudeInventory(file){
   const b64 = await shrinkToJpeg(file, 1800);
   let resp;
   try{
-    resp = await fetch('https://api.anthropic.com/v1/messages',{
+    resp = await fetchT('https://api.anthropic.com/v1/messages',{
       method:'POST',
       headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body: JSON.stringify({model:INV_MODEL, max_tokens:700, messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
         {type:'text',text:INV_PROMPT}]}]})
-    });
-  }catch(e){ throw new Error('No hay conexión a internet. Prueba otra vez con cobertura.'); }
+    }, 30000);
+  }catch(e){ if(e.cancelled) throw e; throw new Error(e.kind==='timeout' ? 'El servicio no responde (la conexión va lenta). Inténtalo de nuevo.' : 'No hay conexión a internet. Prueba otra vez con cobertura.'); }
   if(resp.status===401) throw new Error('La clave de Anthropic no es válida. Revísala en Ajustes.');
   if(resp.status===429) throw new Error('Demasiadas peticiones seguidas. Espera un minuto y repite.');
   if(resp.status===402 || resp.status===400){
@@ -185,10 +197,10 @@ $('fileInv').onchange = async e=>{
   $('scanSheet').classList.add('hidden');
   try{
     let r;
-    if(aiMode()){ busy('Leyendo la foto con IA…'); r = await askAIInventory(f); }
+    if(aiMode()){ busy('Leyendo la foto con IA…'); showCancel(); r = await askAIInventory(f); }
     else r = await ocrInventory(await createImageBitmap(f,{imageOrientation:'from-image'}));
     unbusy(); showInvConfirm(r);
-  }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
+  }catch(err){ unbusy(); if(err&&err.cancelled) return; console.error(err); alert(err.message||err); }
 };
 /* ---- lector gratuito (Tesseract, dentro del móvil) ---- */
 let tessWorker=null;
@@ -573,10 +585,10 @@ $('bankUse').onclick = async ()=>{
     $('bankModal').classList.add('hidden');
     try{
       let r;
-      if(aiMode()){ busy('Leyendo la foto con IA…'); r=await askAIInventory(await (await fetch(b.data)).blob()); }
+      if(aiMode()){ busy('Leyendo la foto con IA…'); showCancel(); r=await askAIInventory(await (await fetch(b.data)).blob()); }
       else { const img=await loadImage(b.data); busy('Preparando…'); r=await ocrInventory(img); }
       unbusy(); showInvConfirm(r);
-    }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
+    }catch(err){ unbusy(); if(err&&err.cancelled) return; console.error(err); alert(err.message||err); }
     return;
   }
   const num=bankTarget; if(num===null||num===undefined||!bankSel.length) return;
