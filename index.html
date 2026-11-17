@@ -170,6 +170,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,B
 .sw i::after{content:'';position:absolute;top:2px;left:2px;width:27px;height:27px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.3);}
 .sw input:checked+i{background:var(--ok);} .sw input:checked+i::after{transform:translateX(20px);}
 .invres{margin-top:8px;font-size:12.5px;color:var(--soft);line-height:1.35;}.invres b{color:var(--text,#111);}
+.sgn{position:relative;}.sgn input{width:100%;padding-right:44px;box-sizing:border-box;}.sgnb{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:36px;height:34px;border:1px solid var(--border);border-radius:9px;background:#fff;font-size:18px;font-weight:700;color:#333;}
+.invgrid{display:grid;grid-template-columns:84px 1fr 1fr;gap:6px 8px;align-items:center;margin:4px 0;}.invgrid b{font-size:13px;}.invgrid .h{font-size:11px;font-weight:800;color:var(--soft);text-transform:uppercase;}.invgrid input{width:100%;box-sizing:border-box;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:15px;}.invgrid .span2{grid-column:span 2;}.invdoubts{background:#fff7e6;border:1px solid #f0c36d;border-radius:10px;padding:9px 11px;font-size:13px;}
 input[type=file]{display:none;}
 </style>
 </head>
@@ -209,7 +211,8 @@ input[type=file]{display:none;}
   <div class="screen hidden" id="s-settings">
     <div class="hcard"><div class="hgrid">
       <div class="fld full"><label>Nombre del auditor</label><input id="setAuditor" type="text"></div>
-    </div></div>
+      <div class="fld full"><label>Clave de Anthropic (para leer la foto del inventario)</label><input id="setKey" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="sk-ant-..."></div>
+    </div><div class="hint">La clave se guarda solo en este móvil. Se crea en console.anthropic.com → API Keys, con unos 5 € de saldo sobra para meses. Leer una foto cuesta menos de 1 céntimo.</div></div>
     <div class="pad"><button class="btn btn-p" id="saveSet" style="width:100%">Guardar ajustes</button></div>
   </div>
 
@@ -254,6 +257,15 @@ input[type=file]{display:none;}
 <input type="file" id="fileBank" accept="image/*" multiple>
 <input type="file" id="filePhoto" accept="image/*" multiple>
 <input type="file" id="fileReload" accept=".xlsx">
+<input type="file" id="fileInv" accept="image/*">
+<div class="sheet hidden" id="invSheet"><div class="sheet-box" style="max-height:92vh;overflow:auto">
+  <b style="font-size:16px">Esto es lo que he leído</b>
+  <div class="hint" style="margin:0">Revísalo y corrige lo que haga falta antes de aplicar.</div>
+  <div id="invRows"></div>
+  <div id="invDoubts" class="invdoubts hidden"></div>
+  <button class="btn btn-p" id="invApply">Aplicar a la encuesta</button>
+  <button class="btn btn-s" id="invCancel" style="text-align:center">Cancelar</button>
+</div></div>
 
 <div class="overlay hidden" id="busy"><div class="box"><div class="spin"></div><div id="busyMsg">Procesando…</div></div></div>
 <div id="toast"></div>

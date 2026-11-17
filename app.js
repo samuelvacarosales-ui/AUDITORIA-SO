@@ -21,7 +21,7 @@ const dbDel = id => new Promise((res,rej)=>{ const tx=db.transaction('audits','r
 function getSettings(){
   let s = {};
   try{ s = JSON.parse(localStorage.getItem('anexoSO_settings'))||{}; }catch(e){}
-  return {auditor: s.auditor || 'SAMUEL VACA'};
+  return {auditor: s.auditor || 'SAMUEL VACA', apiKey: s.apiKey || ''};
 }
 function toast(msg, ms){
   const t=$('toast'); t.textContent=msg; t.classList.add('show');
@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v10';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v12';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -61,10 +61,10 @@ $('backBtn').onclick = async ()=>{
   showScreen('home');
 };
 $('settingsBtn').onclick = ()=>{
-  const s=getSettings(); $('setAuditor').value=s.auditor; showScreen('settings');
+  const s=getSettings(); $('setAuditor').value=s.auditor; $('setKey').value=s.apiKey; showScreen('settings');
 };
 $('saveSet').onclick = ()=>{
-  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA'}));
+  localStorage.setItem('anexoSO_settings', JSON.stringify({auditor:$('setAuditor').value.trim()||'SAMUEL VACA', apiKey:$('setKey').value.trim()}));
   toast('Ajustes guardados'); showScreen('home');
 };
 
@@ -93,6 +93,84 @@ function auditCard(a){
   };
   return d;
 }
+
+
+/* ---------------- leer foto de inventario con Claude ---------------- */
+const INV_MODEL = 'claude-sonnet-5-5';
+const INV_PROMPT = `Esta foto es una nota escrita a mano por un auditor de gasolineras con cifras de inventario. Extrae SOLO las cantidades.
+Estructura habitual: a la izquierda, líneas "TABACO A <cifra>", "CAFÉ A <cifra>", "ONCE A <cifra>", "BUTANO A <cifra>" (A = ajuste físico, puede ser negativo, p. ej. -6 o -18,79 y también 0). A la derecha, líneas que empiezan por "V" (ventas) en el MISMO orden vertical: la 1ª V es de tabaco, la 2ª de café, la 3ª de once, la 4ª de butano. Debajo puede haber "F.FIJO" (fondo fijo) y "F.MANIOBRA" (fondo de maniobra) con su importe.
+Reglas: ignora texto tenue o al revés que se transparente del otro lado del papel y los garabatos o recuadros dibujados; si un número está tachado o escrito sobre otro, toma el que se ve más oscuro. Devuelve los importes en formato español (punto para miles, coma para decimales, signo - si es negativo), sin el símbolo €. Si algo no aparece o no se lee, deja "" y explícalo en "dudas". Si algún dígito es dudoso, dilo en "dudas".
+Responde ÚNICAMENTE con JSON válido, sin texto antes ni después, con esta forma exacta:
+{"tabaco":{"a":"","v":""},"cafe":{"a":"","v":""},"once":{"a":"","v":""},"butano":{"a":"","v":""},"ffijo":"","fmaniobra":"","dudas":""}`;
+
+async function shrinkToJpeg(file, max){
+  const bmp = await createImageBitmap(file, {imageOrientation:'from-image'});
+  const k = Math.min(1, max/Math.max(bmp.width,bmp.height));
+  const cv = document.createElement('canvas'); cv.width=Math.round(bmp.width*k); cv.height=Math.round(bmp.height*k);
+  cv.getContext('2d').drawImage(bmp,0,0,cv.width,cv.height);
+  return cv.toDataURL('image/jpeg',0.88).split(',')[1];
+}
+async function askClaudeInventory(file){
+  const key = getSettings().apiKey;
+  const b64 = await shrinkToJpeg(file, 1800);
+  let resp;
+  try{
+    resp = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body: JSON.stringify({model:INV_MODEL, max_tokens:700, messages:[{role:'user',content:[
+        {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
+        {type:'text',text:INV_PROMPT}]}]})
+    });
+  }catch(e){ throw new Error('No hay conexión a internet. Prueba otra vez con cobertura.'); }
+  if(resp.status===401) throw new Error('La clave de Anthropic no es válida. Revísala en Ajustes.');
+  if(resp.status===429) throw new Error('Demasiadas peticiones seguidas. Espera un minuto y repite.');
+  if(resp.status===402 || resp.status===400){
+    let m=''; try{ m=(await resp.json()).error.message; }catch(e){}
+    throw new Error('Anthropic ha rechazado la petición'+(m?': '+m:'')+'. Comprueba que la cuenta tiene saldo.');
+  }
+  if(!resp.ok) throw new Error('Error del servicio ('+resp.status+'). Inténtalo de nuevo en un momento.');
+  const data = await resp.json();
+  const txt = (data.content||[]).map(b=>b.text||'').join('');
+  const m = txt.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error('No he podido entender la respuesta. Haz la foto más de cerca y con buena luz.');
+  try{ return JSON.parse(m[0]); }catch(e){ throw new Error('La respuesta llegó incompleta. Inténtalo de nuevo.'); }
+}
+let invReading = null;
+function showInvConfirm(r){
+  invReading = r;
+  const rows = [['tabaco','Tabaco (14)'],['once','Once (15)'],['butano','Butano (16)'],['cafe','Café (17)']];
+  let html = '<div class="invgrid"><span></span><span class="h">Ajuste</span><span class="h">Ventas</span>';
+  rows.forEach(([k,l])=>{
+    const e=r[k]||{};
+    html += '<b>'+l+'</b><input data-k="'+k+'" data-w="a" value="'+esc(e.a||'')+'" autocomplete="off"><input data-k="'+k+'" data-w="v" value="'+esc(e.v||'')+'" autocomplete="off">';
+  });
+  html += '<b>F. fijo (19)</b><input class="span2" data-k="ffijo" value="'+esc(r.ffijo||'')+'" autocomplete="off">'+
+          '<b>F. maniobra</b><input class="span2" data-k="fmaniobra" value="'+esc(r.fmaniobra||'')+'" autocomplete="off"></div>';
+  $('invRows').innerHTML = html;
+  const d=$('invDoubts'); d.textContent = r.dudas ? ('⚠ '+r.dudas) : ''; d.classList.toggle('hidden', !r.dudas);
+  $('invSheet').classList.remove('hidden');
+}
+$('fileInv').onchange = async e=>{
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  try{
+    busy('Leyendo la foto…');
+    const r = await askClaudeInventory(f);
+    unbusy(); showInvConfirm(r);
+  }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
+};
+$('invCancel').onclick = ()=>$('invSheet').classList.add('hidden');
+$('invApply').onclick = ()=>{
+  const r={tabaco:{},cafe:{},once:{},butano:{}};
+  $('invRows').querySelectorAll('input').forEach(i=>{
+    const k=i.dataset.k, w=i.dataset.w;
+    if(w) r[k][w]=i.value; else r[k]=i.value;
+  });
+  const warn = applyInvReading(cur, r);
+  $('invSheet').classList.add('hidden');
+  renderList(); refreshTop(); scheduleSave();
+  toast(warn.length ? ('⚠ Las preguntas '+warn.join(', ')+' no coinciden con la plantilla y no se han tocado') : 'Inventario y fondos rellenados (14-17 y 19)', 3800);
+};
 
 /* ---------------- importar Excel ---------------- */
 async function handleExcel(file){
@@ -141,6 +219,7 @@ function renderHeaderCard(){
    '<label class="swrow"><span class="swtxt"><b>Esta estación NO dispone de servicios</b><small>Pone N/A + «NO DISPONE» en las preguntas 6, 8, 48, 56, 65 y 71</small></span>'+
    '<span class="sw"><input type="checkbox" id="sinServ"><i></i></span></label>'+
    (nb? '' : '<div class="hint">Elige de una vez las fotos de esta estación y luego solo las marcas en cada pregunta.</div>')+
+   '<div class="hbtns"><label class="linkbtn main" id="invBtn">🧾 Leer foto de inventario</label></div>'+
    '<div class="hbtns"><div class="linkbtn'+(nb?'':' main')+'" id="bankBtn">📷 Fotos de la estación ('+nb+')</div>'+
    '<label class="linkbtn" for="fileReload">↻ Recargar Excel</label></div>';
   $('sinServ').checked = !!a.sinServicios;
@@ -149,6 +228,10 @@ function renderHeaderCard(){
     renderList(); refreshTop(); scheduleSave();
     toast(warn.length ? ('⚠ Las preguntas '+warn.join(', ')+' no coinciden con la plantilla y no se han tocado')
          : on ? 'N/A + NO DISPONE en las preguntas 6, 8, 48, 56, 65 y 71' : 'Servicios restaurados a SÍ', 3200);
+  };
+  $('invBtn').onclick = ()=>{
+    if(!getSettings().apiKey){ toast('Primero pon tu clave de Anthropic en Ajustes (⚙ en la portada)', 4200); return; }
+    $('fileInv').click();
   };
   $('bankBtn').onclick = ()=>openBank('manage');
   $('fAud').oninput = e=>{ cur.auditor=e.target.value; scheduleSave(); };
@@ -616,6 +699,6 @@ function missingLibs(){
   }
   try{ db=await openDB(); }catch(e){ alert('No se puede usar el almacenamiento del navegador: '+e); return; }
   if(navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(()=>{});
-  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).catch(()=>{});
   await renderHome(); showScreen('home');
 })();

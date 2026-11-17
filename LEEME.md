@@ -23,6 +23,7 @@ Usa el MISMO repositorio que ya tienes. Son 10 archivos, todos sueltos.
 
 - Al cargar el Excel limpio, todas las preguntas pasan a **SÍ** (verde).
 - Por defecto: pregunta 13 → N/A "RECAUDACIÓN CON TABLET"; 37 → N/A "NO DISPONE"; 53 → N/A "NO APLICA".
-- Interruptor **"Esta estación NO dispone de servicios"**: preguntas 6, 8, 56, 65 y 71 → N/A + "NO DISPONE". Al apagarlo vuelven a SÍ (si no las has cambiado a mano).
+- Interruptor **"Esta estación NO dispone de servicios"**: preguntas 6, 8, 48, 56, 65 y 71 → N/A + "NO DISPONE". Al apagarlo vuelven a SÍ (si no las has cambiado a mano).
 - Para que el móvil coja la versión nueva, sube de nuevo index.html, app.js, core.js, sw.js, manifest.json y LEEME.md.
 - Preguntas 14–17 (inventarios): escribes Ajuste físico (€) y Ventas (€); la app calcula Valor = ajuste × 100 / ventas (con % y signo) y pone en observaciones "AJUSTE FISICO: x € VENTAS: y €". Sin importes queda "%" y "AJUSTE FISICO: € VENTAS: €".
+- **Leer foto de inventario (v12):** botón "🧾 Leer foto de inventario" en la cabecera de cada encuesta. Necesita internet y una clave de Anthropic (Ajustes ⚙ en la portada). Rellena Ajuste/Ventas de las preguntas 14–17 y, en la 19, "F.FIJO: x€. F.MANIOBRA: y€". Siempre enseña lo leído para que lo revises antes de aplicarlo.

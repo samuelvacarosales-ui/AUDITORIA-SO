@@ -96,7 +96,7 @@ const DEFAULT_NA = {
   37: {kw:'SOTANO',                obs:'NO DISPONE'},
   53: {kw:'LEGIONELLA',            obs:'NO APLICA'},
 };
-const SERVICE_Q = {6:'CONTADORES', 8:'COMPRESOR', 56:'SERVICIOS COMPLEMENTARIOS', 65:'SERVICIOS COMPLEMENTARIOS', 71:'SERVICIOS COMPLEMENTARIOS'};
+const SERVICE_Q = {6:'CONTADORES', 8:'COMPRESOR', 48:'COMPRESOR', 56:'SERVICIOS COMPLEMENTARIOS', 65:'SERVICIOS COMPLEMENTARIOS', 71:'SERVICIOS COMPLEMENTARIOS'};
 const SERVICE_OBS = 'NO DISPONE';
 function normTxt(s){ return String(s||'').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,''); }
 function ruleMatches(q, kw){ return normTxt(q.text).includes(kw); }
@@ -157,6 +157,33 @@ function setSinServicios(audit, on){
     else if(q.status==='NA' && q.obs===SERVICE_OBS){ q.status='SI'; q.obs=''; }   // solo si no la has cambiado a mano
   });
   audit.sinServicios = !!on;
+  return warn;
+}
+
+
+/* ---- Lectura de la foto de inventario: aplica lo leído a 14-17 y 19 ---- */
+const INV_KEYS = {tabaco:14, once:15, butano:16, cafe:17};
+const FONDOS_KW = 'FONDOS FIJO';
+function cleanAmount(s){
+  s = String(s==null?'':s).replace(/[−–—]/g,'-').replace(/[€\s]/g,'').replace(/[^0-9.,-]/g,'');
+  return /\d/.test(s) ? s : '';
+}
+function applyInvReading(audit, r){
+  const warn = [];
+  Object.keys(INV_KEYS).forEach(k=>{
+    const n = INV_KEYS[k], e = r[k]; if(!e) return;
+    const q = audit.questions.find(x=>x.num===n);
+    if(!q || !ruleMatches(q, INV_Q[n])){ warn.push(n); return; }
+    q.inv = true;
+    q.ajuste = cleanAmount(e.a); q.ventas = cleanAmount(e.v);
+    recalcInv(q);
+  });
+  const ff = cleanAmount(r.ffijo), fm = cleanAmount(r.fmaniobra);
+  if(ff || fm){
+    const q = audit.questions.find(x=>x.num===19);
+    if(!q || !ruleMatches(q, FONDOS_KW)) warn.push(19);
+    else q.obs = [ff?('F.FIJO: '+ff+'€.'):'', fm?('F.MANIOBRA: '+fm+'€'):''].filter(Boolean).join(' ').slice(0,100);
+  }
   return warn;
 }
 
