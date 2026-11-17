@@ -48,7 +48,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v13';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v14';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -151,16 +151,72 @@ function showInvConfirm(r){
   const d=$('invDoubts'); d.textContent = r.dudas ? ('⚠ '+r.dudas) : ''; d.classList.toggle('hidden', !r.dudas);
   $('invSheet').classList.remove('hidden');
 }
+let useAI=false;
 $('fileInv').onchange = async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;
+  $('scanSheet').classList.add('hidden');
   try{
-    busy('Leyendo la foto…');
-    const r = await askClaudeInventory(f);
+    let r;
+    if(useAI){ busy('Leyendo la foto con IA…'); r = await askClaudeInventory(f); }
+    else r = await ocrInventory(await createImageBitmap(f,{imageOrientation:'from-image'}));
     unbusy(); showInvConfirm(r);
   }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
+  useAI=false;
 };
+/* ---- lector gratuito (Tesseract, dentro del móvil) ---- */
+let tessWorker=null;
+function prepForOcr(bmp){
+  const k=Math.min(1,2000/Math.max(bmp.width,bmp.height)), w=Math.round(bmp.width*k), h=Math.round(bmp.height*k);
+  const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d',{willReadFrequently:true});
+  cx.drawImage(bmp,0,0,w,h);
+  const img=cx.getImageData(0,0,w,h), d=img.data;
+  const sw=Math.max(8,Math.round(w/40)), sh=Math.max(8,Math.round(h/40));            // fondo = imagen muy reducida
+  const sm=document.createElement('canvas'); sm.width=sw; sm.height=sh; const sx=sm.getContext('2d',{willReadFrequently:true});
+  sx.imageSmoothingEnabled=true; sx.drawImage(cv,0,0,sw,sh);
+  const bg=document.createElement('canvas'); bg.width=w; bg.height=h; const bx=bg.getContext('2d',{willReadFrequently:true});
+  bx.imageSmoothingEnabled=true; bx.drawImage(sm,0,0,w,h);
+  const b=bx.getImageData(0,0,w,h).data;
+  for(let i=0;i<d.length;i+=4){
+    const g=0.3*d[i]+0.59*d[i+1]+0.11*d[i+2], gb=0.3*b[i]+0.59*b[i+1]+0.11*b[i+2];
+    const v=(gb-g)>22?0:255; d[i]=d[i+1]=d[i+2]=v; d[i+3]=255;
+  }
+  cx.putImageData(img,0,0); return cv;
+}
+function numFromWord(t){
+  t=String(t||'').trim(); if(!/\d/.test(t)) return '';
+  t=t.replace(/[Oo]/g,'0').replace(/[lI|]/g,'1').replace(/[−–—]/g,'-');
+  t=t.replace(/[^0-9.,-]/g,'');
+  return /\d/.test(t) ? t.replace(/[.,]+$/,'') : '';
+}
+async function ocrInventory(bmp){
+  if(typeof Tesseract==='undefined') throw new Error('Falta el lector gratuito en la app. Sube a GitHub también tesseract.min.js, worker.min.js, tesseract-core-simd-lstm.wasm.js y eng.traineddata.gz.');
+  busy('Preparando el lector (la primera vez tarda unos segundos)…');
+  const abs=u=>new URL(u,location.href).href;
+  if(!tessWorker){
+    tessWorker = await Tesseract.createWorker('eng',1,{workerPath:abs('worker.min.js'),corePath:abs('tesseract-core-simd-lstm.wasm.js'),langPath:abs('.'),gzip:true});
+    await tessWorker.setParameters({tessedit_pageseg_mode:'11', preserve_interword_spaces:'1'});
+  }
+  busy('Leyendo la foto…');
+  const cv=prepForOcr(bmp);
+  const res=await tessWorker.recognize(cv,{},{text:true,blocks:true});
+  const data=res.data;
+  const r=parseInventoryText(data.text||'');
+  /* respaldo por posición: cifras sueltas de la columna izquierda (ajustes) y derecha (ventas), de arriba abajo */
+  const words=[]; (data.blocks||[]).forEach(b=>(b.paragraphs||[]).forEach(p=>(p.lines||[]).forEach(l=>(l.words||[]).forEach(w=>words.push(w)))));
+  const toks=words.map(w=>({n:numFromWord(w.text),x:(w.bbox.x0+w.bbox.x1)/2,y:(w.bbox.y0+w.bbox.y1)/2})).filter(t=>t.n && t.n!=='-');
+  const L=toks.filter(t=>t.x<cv.width*0.5).sort((p,q)=>p.y-q.y), R=toks.filter(t=>t.x>=cv.width*0.5).sort((p,q)=>p.y-q.y);
+  ['tabaco','cafe','once','butano'].forEach((k,i)=>{ if(!r[k].a && L[i]) r[k].a=L[i].n; if(!r[k].v && R[i]) r[k].v=R[i].n; });
+  if(!r.ffijo && L[4]) r.ffijo=L[4].n; if(!r.fmaniobra && R[4]) r.fmaniobra=R[4].n;
+  r.dudas='Lectura automática gratuita: con letra a mano falla a menudo. Comprueba cada cifra con tu nota.';
+  return r;
+}
 $('scanCancel').onclick = ()=>$('scanSheet').classList.add('hidden');
-$('scanAI').onclick = ()=>{ $('scanSheet').classList.add('hidden'); $('fileInv').click(); };
+$('scanAI').onclick = ()=>{ $('scanSheet').classList.add('hidden'); useAI=true; $('fileInv').click(); };
+$('scanLib').onclick = ()=>{ useAI=false; };
+$('scanBank').onclick = ()=>{
+  if(!bank().length){ toast('Esta estación aún no tiene fotos guardadas', 3000); return; }
+  $('scanSheet').classList.add('hidden'); openBank('ocr', null);
+};
 $('scanGo').onclick = ()=>{
   const txt=$('scanTxt').value;
   if(!txt.trim()){ toast('Primero escanea o escribe el texto de la nota', 3200); return; }
@@ -446,7 +502,7 @@ function openBank(mode, target){
 function closeBank(){ $('bankModal').classList.add('hidden'); renderHeaderCard(); }
 function renderBank(){
   const list=bank(), used=bankUsedSet(), grid=$('bankGrid');
-  $('bankTitle').textContent = bankMode==='pick' ? 'Elegir fotos' : 'Fotos de la estación ('+list.length+')';
+  $('bankTitle').textContent = bankMode==='ocr' ? 'Elige la foto del inventario' : bankMode==='pick' ? 'Elegir fotos' : 'Fotos de la estación ('+list.length+')';
   grid.innerHTML='';
   if(!list.length){
     grid.innerHTML='<div class="bank-empty">Aún no hay fotos guardadas.<br><br>Pulsa <b>«Añadir fotos»</b> y marca de una vez todas las de esta estación en tu fototeca.</div>';
@@ -457,11 +513,12 @@ function renderBank(){
     if(idx>=0) el.classList.add('sel');
     el.innerHTML='<img src="'+b.thumb+'">'+
       (used.has(b.id)?'<div class="bk-used">en uso</div>':'')+
-      (bankMode==='pick' ? (idx>=0?'<div class="bk-n">'+(idx+1)+'</div>':'<div class="bk-n off"></div>') : '<div class="bk-x">✕</div>');
+      ((bankMode==='pick'||bankMode==='ocr') ? (idx>=0?'<div class="bk-n">'+(idx+1)+'</div>':'<div class="bk-n off"></div>') : '<div class="bk-x">✕</div>');
     el.onclick=ev=>{
-      if(bankMode==='pick'){
+      if(bankMode==='pick'||bankMode==='ocr'){
         const k=bankSel.indexOf(b.id);
-        if(k>=0) bankSel.splice(k,1); else bankSel.push(b.id);
+        if(bankMode==='ocr') bankSel=(k>=0?[]:[b.id]);
+        else if(k>=0) bankSel.splice(k,1); else bankSel.push(b.id);
         renderBank();
       }else if(ev.target.classList.contains('bk-x')){
         if(confirm('¿Quitar esta foto de la estación?\nLas que ya hayas puesto en preguntas se mantienen.')){
@@ -472,12 +529,21 @@ function renderBank(){
     grid.appendChild(el);
   });
   const use=$('bankUse');
-  use.classList.toggle('hidden', bankMode!=='pick');
+  use.classList.toggle('hidden', bankMode==='manage');
   use.disabled = !bankSel.length;
-  use.textContent = bankSel.length ? 'Usar '+bankSel.length+' foto'+(bankSel.length>1?'s':'') : 'Elige fotos';
+  use.textContent = bankMode==='ocr' ? (bankSel.length?'Leer esta foto':'Elige una foto') : bankSel.length ? 'Usar '+bankSel.length+' foto'+(bankSel.length>1?'s':'') : 'Elige fotos';
 }
 $('bankClose').onclick = closeBank;
 $('bankUse').onclick = async ()=>{
+  if(bankMode==='ocr'){
+    const b=bank().find(x=>x.id===bankSel[0]); if(!b) return;
+    $('bankModal').classList.add('hidden');
+    try{
+      const img=await loadImage(b.data);
+      busy('Preparando…'); const r=await ocrInventory(img); unbusy(); showInvConfirm(r);
+    }catch(err){ unbusy(); console.error(err); alert(err.message||err); }
+    return;
+  }
   const num=bankTarget; if(num===null||num===undefined||!bankSel.length) return;
   const arr = cur.photos[num] = cur.photos[num] || [];
   bankSel.forEach(id=>{

@@ -1,8 +1,8 @@
 /* Service worker: primero red (así las actualizaciones llegan solas),
    y si no hay cobertura, usa la copia guardada. */
-const CACHE = 'anexo-so-v13';
+const CACHE = 'anexo-so-v14';
 const ASSETS = ['./','./index.html','./app.js','./core.js','./manifest.json',
-  './xlsx.full.min.js','./jspdf.umd.min.js','./jszip.min.js','./icon-192.png','./icon-512.png'];
+  './xlsx.full.min.js','./jspdf.umd.min.js','./jszip.min.js','./tesseract.min.js','./worker.min.js','./tesseract-core-simd-lstm.wasm.js','./eng.traineddata.gz','./icon-192.png','./icon-512.png'];
 
 self.addEventListener('install', e=>{
   e.waitUntil(
