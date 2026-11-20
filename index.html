@@ -259,11 +259,13 @@ input[type=file]{display:none;}
 <input type="file" id="filePhoto" accept="image/*" multiple>
 <input type="file" id="fileReload" accept=".xlsx">
 <input type="file" id="fileInv" accept="image/*">
+<input type="file" id="fileRep" multiple>
 <div class="sheet hidden" id="scanSheet"><div class="sheet-box" style="max-height:92vh;overflow:auto">
   <b style="font-size:16px">Foto de inventario</b>
-  <div class="hint" style="margin:0">Elige la foto de tu nota. La app la lee sola y luego te enseña lo que ha entendido para que lo corrijas antes de aplicar.</div>
+  <div class="hint" style="margin:0">Lo más fiable: carga los Excel de inventario (AJUSTE y VENTAS de café, tabaco y once-butano) y la app saca las cifras. O elige la foto de tu nota. Siempre verás lo leído antes de aplicarlo.</div>
   <div id="scanMode" class="hint" style="margin:0;font-weight:700"></div>
-  <label class="btn btn-p" for="fileInv" id="scanLib" style="display:block;text-align:left">📷 Elegir de la fototeca</label>
+  <label class="btn btn-p" for="fileRep" id="scanRep" style="display:block;text-align:left">📊 Cargar los Excel de inventario</label>
+  <label class="btn btn-s" for="fileInv" id="scanLib" style="display:block;text-align:left">📷 Elegir de la fototeca</label>
   <button class="btn btn-s" id="scanBank">🖼 De las fotos de la estación</button>
     <details style="margin-top:2px"><summary style="font-size:13px;color:var(--soft)">O pega el texto ya escaneado</summary>
     <textarea id="scanTxt" rows="5" style="width:100%;box-sizing:border-box;margin-top:6px;padding:10px;border:1px solid var(--border);border-radius:10px;font-size:16px" placeholder="TABACO A -6&#10;V 19.122,40 ..."></textarea>
@@ -274,6 +276,7 @@ input[type=file]{display:none;}
   <b style="font-size:16px">Esto es lo que he leído</b>
   <div class="hint" style="margin:0">Revísalo y corrige lo que haga falta antes de aplicar.</div>
   <div id="invRows"></div>
+  <div id="invInfo" class="hint hidden" style="margin:6px 0"></div>
   <div id="invDoubts" class="invdoubts hidden"></div>
   <button class="btn btn-p" id="invApply">Aplicar a la encuesta</button>
   <button class="btn btn-s" id="invCancel" style="text-align:center">Cancelar</button>

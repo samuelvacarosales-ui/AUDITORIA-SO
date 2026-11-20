@@ -57,7 +57,7 @@ function showScreen(name){
   $('bar-preview').classList.toggle('hidden', name!=='preview');
   $('backBtn').classList.toggle('hidden', name==='home');
   $('settingsBtn').classList.toggle('hidden', name!=='home');
-  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v17';
+  let t='Encuesta SO', s='Repsol · Excel y anexo fotográfico · v18';
   if(name==='audit' && cur){ t=cur.name||'Auditoría'; s='CECO '+cur.ceco+' · '+cur.fecha; }
   if(name==='preview' && cur){ t='Vista previa'; s=(cur.name||'')+' · CECO '+cur.ceco; }
   if(name==='settings'){ t='Ajustes'; s='Se guardan en este dispositivo'; }
@@ -189,6 +189,7 @@ function showInvConfirm(r){
   html += '<b>F. fijo (19)</b><input class="span2" data-k="ffijo" value="'+esc(r.ffijo||'')+'" autocomplete="off">'+
           '<b>F. maniobra</b><input class="span2" data-k="fmaniobra" value="'+esc(r.fmaniobra||'')+'" autocomplete="off"></div>';
   $('invRows').innerHTML = html;
+  const inf=$('invInfo'); inf.textContent=r.info||''; inf.classList.toggle('hidden', !r.info);
   const d=$('invDoubts'); d.textContent = r.dudas ? ('⚠ '+r.dudas) : ''; d.classList.toggle('hidden', !r.dudas);
   $('invSheet').classList.remove('hidden');
 }
@@ -249,6 +250,16 @@ async function ocrInventory(bmp){
   r.dudas='Lectura automática gratuita: con letra a mano falla a menudo. Comprueba cada cifra con tu nota.';
   return r;
 }
+$('fileRep').onchange = async e=>{
+  const fs=[...e.target.files]; e.target.value=''; if(!fs.length) return;
+  $('scanSheet').classList.add('hidden');
+  try{
+    busy('Leyendo los Excel…');
+    const files=[]; for(const f of fs) files.push({name:f.name, ab:await f.arrayBuffer()});
+    const r=parseInventoryReports(files);
+    unbusy(); showInvConfirm(r);
+  }catch(err){ unbusy(); console.error(err); alert('No he podido leer los archivos: '+(err.message||err)); }
+};
 $('scanCancel').onclick = ()=>$('scanSheet').classList.add('hidden');
 $('scanBank').onclick = ()=>{
   if(!bank().length){ toast('Esta estación aún no tiene fotos guardadas', 3000); return; }
@@ -266,6 +277,7 @@ $('invApply').onclick = ()=>{
     const k=i.dataset.k, w=i.dataset.w;
     if(w) r[k][w]=i.value; else r[k]=i.value;
   });
+  r.nodispone = (invReading && invReading.nodispone || []).filter(k=>!(r[k].a||r[k].v));   // solo si has dejado sus casillas vacías
   const warn = applyInvReading(cur, r);
   $('invSheet').classList.add('hidden');
   renderList(); refreshTop(); scheduleSave();

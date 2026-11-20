@@ -177,7 +177,13 @@ function cleanAmount(s){
 }
 function applyInvReading(audit, r){
   const warn = [];
+  (r.nodispone||[]).forEach(k=>{
+    const n = INV_KEYS[k], q = audit.questions.find(x=>x.num===n);
+    if(!q || !ruleMatches(q, INV_Q[n])){ warn.push(n); return; }
+    q.inv=false; delete q.ajuste; delete q.ventas; q.status='NA'; q.valor=''; q.obs='NO DISPONE';
+  });
   Object.keys(INV_KEYS).forEach(k=>{
+    if((r.nodispone||[]).includes(k)) return;
     const n = INV_KEYS[k], e = r[k]; if(!e) return;
     const q = audit.questions.find(x=>x.num===n);
     if(!q || !ruleMatches(q, INV_Q[n])){ warn.push(n); return; }
@@ -216,6 +222,124 @@ function parseInventoryText(raw){
   ['tabaco','cafe','once','butano'].forEach(k=>{ if(out[k].a==='') dud.push('Falta el ajuste de '+k+'.'); });
   if(!vs.length && !out.tabaco.a) dud.push('No he reconocido nada. Revisa el texto o escríbelo a mano en la ventana siguiente.');
   out.dudas = dud.join(' ');
+  return out;
+}
+
+
+/* ============================================================
+   LEER LOS EXCEL DE INVENTARIO (AJUSTE/VENTAS de café, tabaco y once-butano)
+   Reglas de Samuel:
+   - Café y tabaco: AJUSTE → última cifra de la columna Aj.Físico; VENTAS → última cifra de la columna Ventas.
+   - Once y butano (un solo archivo por tipo): bloques que terminan en la fila «MERCANCIA EN DEPÓSI».
+       butano = bloque con BUTANO/PROPANO; recargas y «cupón electrónico/super once» se ignoran;
+       once = el resto de bloques (se suman). Ventas siempre en positivo.
+   - Sin archivo de una familia (o sin su bloque) = la estación no dispone de ella.
+   ============================================================ */
+function decodeReportRows(ab){
+  const u = new Uint8Array(ab); let text=null;
+  if(u[0]===0xFF && u[1]===0xFE) text = new TextDecoder('utf-16le').decode(u);
+  else if(u[0]===0xFE && u[1]===0xFF) text = new TextDecoder('utf-16be').decode(u);
+  else if(u[0]===0xD0 && u[1]===0xCF || (u[0]===0x50 && u[1]===0x4B)){            // .xls binario o .xlsx de verdad
+    const wb = XLSX.read(ab,{type:'array'});
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:true,defval:''});
+  }else text = new TextDecoder('utf-8').decode(u);
+  return text.replace(/\r/g,'').split('\n').map(l=>l.split('\t'));
+}
+function repNum(v){
+  if(typeof v==='number') return isFinite(v)?v:NaN;
+  let s=String(v==null?'':v).replace(/\s/g,'').replace(/[€%]/g,'');
+  if(!/^-?[\d.,]+$/.test(s) || !/\d/.test(s)) return NaN;
+  s = s.includes(',') ? s.replace(/\./g,'').replace(',','.') : (/^-?\d{1,3}(\.\d{3})+$/.test(s) ? s.replace(/\./g,'') : s);
+  const n=Number(s); return isFinite(n)?n:NaN;
+}
+function fmtEs(n){
+  n=Math.round(n*100)/100; if(Object.is(n,-0)) n=0;
+  return (Number.isInteger(n)?String(n):n.toFixed(2)).replace('.',',');
+}
+function repCols(rows){
+  for(let i=0;i<rows.length;i++){
+    const r=rows[i].map(x=>normTxt(x).replace(/\s+/g,''));
+    const ajf=r.findIndex(x=>/^AJ\.?FISICO$/.test(x)), ven=r.findIndex(x=>x==='VENTAS');
+    if(ajf>=0 && ven>=0){
+      const desc=r.findIndex(x=>/^DESCRIPCION$/.test(x));
+      return {hdr:i, ajf, ven, desc: desc>=0?desc:-1, mat: r.findIndex(x=>x==='MATERIAL')};
+    }
+  }
+  return null;
+}
+function lastNum(rows, cols, ci){
+  for(let i=rows.length-1;i>cols.hdr;i--){ const n=repNum(rows[i][ci]); if(!isNaN(n) && String(rows[i][ci]).trim()!=='') return n; }
+  return NaN;
+}
+function reportBlocks(rows, cols){
+  const blocks=[]; let cur=[];
+  for(let i=cols.hdr+1;i<rows.length;i++){
+    const r=rows[i], d=normTxt(r[cols.desc]).trim();
+    if(/^MERCANCIA EN DEPOSI/.test(d)){ blocks.push({items:cur, ajf:repNum(r[cols.ajf])||0, ven:repNum(r[cols.ven])||0}); cur=[]; }
+    else if(/^N.?\s*ART/.test(d)) cur=[];
+    else if(d && String(r[cols.mat]||'').trim()) cur.push(d);
+  }
+  return blocks;
+}
+function classifyBlock(b){
+  const t=b.items;
+  if(t.some(d=>/BUTAN|PROPAN/.test(d))) return 'butano';
+  if(t.some(d=>/RECARGA/.test(d))) return 'recargas';
+  if(t.length && t.every(d=>/CUPON ELECTRONICO|SUPER ONCE/.test(d))) return 'ignorar';
+  return t.length ? 'once' : 'ignorar';
+}
+function reportKind(name, rows){
+  const n=normTxt(name);
+  const fam = /CAFE/.test(n)?'cafe' : /TABACO/.test(n)?'tabaco' : /ONCE|BUTANO/.test(n)?'oncebutano' : '';
+  let kind = /AJUSTE/.test(n)?'ajuste' : /VENTAS/.test(n)?'ventas' : '';
+  let f2=fam;
+  const txt=rows.slice(0,12).map(r=>r.join(' ')).join(' ');
+  if(!f2){ const m=txt.match(/\[\]\s*(\d+)/); if(m) f2 = m[1]==='138'?'cafe' : m[1]==='130'?'tabaco' : m[1]==='109'?'oncebutano' : ''; }
+  if(!kind){ kind = /DIFERENCIAS DE INVENTARIO/i.test(txt) ? 'ventas' : ''; }
+  return {fam:f2, kind};
+}
+/* files = [{name, ab}] */
+function parseInventoryReports(files){
+  const out={tabaco:{a:'',v:''},cafe:{a:'',v:''},once:{a:'',v:''},butano:{a:'',v:''},ffijo:'',fmaniobra:'',nodispone:[],dudas:'',info:''};
+  const dud=[], info=[], seen={};
+  const data={cafe:{},tabaco:{},oncebutano:{}};
+  files.forEach(f=>{
+    let rows; try{ rows=decodeReportRows(f.ab); }catch(e){ dud.push('No he podido abrir «'+f.name+'».'); return; }
+    const k=reportKind(f.name, rows), cols=repCols(rows);
+    if(!k.fam || !k.kind || !cols){ dud.push('No reconozco «'+f.name+'» (esperaba AJUSTE o VENTAS de CAFE, TABACO u ONCE-BUTANO).'); return; }
+    data[k.fam][k.kind]={rows,cols}; seen[k.fam]=true;
+  });
+  ['cafe','tabaco'].forEach(fam=>{
+    const d=data[fam];
+    if(d.ajuste){ const n=lastNum(d.ajuste.rows,d.ajuste.cols,d.ajuste.cols.ajf); if(isNaN(n)) dud.push('No encuentro el ajuste físico de '+fam+'.'); else out[fam].a=fmtEs(n); }
+    if(d.ventas){ const n=lastNum(d.ventas.rows,d.ventas.cols,d.ventas.cols.ven); if(isNaN(n)) dud.push('No encuentro las ventas de '+fam+'.'); else out[fam].v=fmtEs(Math.abs(n)); }
+    if(!d.ajuste && !d.ventas) out.nodispone.push(fam);
+    else if(!d.ajuste) dud.push('Falta el archivo AJUSTE de '+fam+'.');
+    else if(!d.ventas) dud.push('Falta el archivo VENTAS de '+fam+'.');
+  });
+  const ob=data.oncebutano;
+  if(!ob.ajuste && !ob.ventas){ out.nodispone.push('once','butano'); }
+  else{
+    if(!ob.ajuste) dud.push('Falta el archivo AJUSTE de ONCE-BUTANO.');
+    if(!ob.ventas) dud.push('Falta el archivo VENTAS de ONCE-BUTANO.');
+    const agg={};
+    ['ajuste','ventas'].forEach(kind=>{
+      if(!ob[kind]) return;
+      const bl=reportBlocks(ob[kind].rows, ob[kind].cols), g={butano:[],once:[]};
+      bl.forEach(b=>{ const c=classifyBlock(b); if(g[c]) g[c].push(b); });
+      agg[kind]=g;
+    });
+    ['butano','once'].forEach(fam=>{
+      const present = ['ajuste','ventas'].filter(k=>agg[k] && agg[k][fam].length);
+      if(!present.length && agg.ajuste && agg.ventas){ out.nodispone.push(fam); return; }
+      if(agg.ajuste){ const s=agg.ajuste[fam].reduce((t,b)=>t+b.ajf,0); if(agg.ajuste[fam].length) out[fam].a=fmtEs(s); }
+      if(agg.ventas){ const s=agg.ventas[fam].reduce((t,b)=>t+b.ven,0); if(agg.ventas[fam].length) out[fam].v=fmtEs(Math.abs(s)); }
+      if(agg.ajuste && agg.ventas && (!agg.ajuste[fam].length || !agg.ventas[fam].length) && present.length)
+        dud.push('De '+fam+' solo aparece en uno de los dos archivos: revisa las cifras.');
+    });
+  }
+  if(out.nodispone.length) info.push('No dispone de: '+out.nodispone.join(', ')+' (no hay datos). Al aplicar se pondrá N/A y «NO DISPONE».');
+  out.dudas=dud.join(' '); out.info=info.join(' ');
   return out;
 }
 
